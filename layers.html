@@ -10,6 +10,7 @@
   <!-- our data: the collage layers + the dreams -->
   <script src="layers-data.js"></script>
   <script src="dreams.js"></script>
+  <script src="dream-themes.js"></script>
   <style>
     body {
       margin: 0;
@@ -132,6 +133,11 @@
     }
     #page p { margin: 0 0 14px; }
     #page .drop { float: left; font-size: 54px; line-height: 0.8; padding: 6px 6px 0 0; font-family: "IM Fell English SC", Georgia, serif; }
+    #page .small { font-size: 15px; margin: 0 0 8px; opacity: 0.85; }
+    #page .example { font-size: 15px; font-style: italic; margin: 0 0 10px; padding-left: 12px;
+                     border-left: 2px solid rgba(43, 29, 14, 0.35); }
+    #page .example span { font-style: normal; font-size: 12px; opacity: 0.7; }
+    #page { max-height: 62vh; overflow-y: auto; }
     #shareBtn {
       font-family: "IM Fell English SC", Georgia, serif; font-size: 18px;
       background: transparent; color: #2b1d0e; cursor: pointer;
@@ -623,23 +629,43 @@
     // No match = an everyday dream: its star drifts into the open sky.
     // Saved only in this visitor's own browser (localStorage) — nobody else sees it.
 
-    const rules = {                       // checked in this order: rarest world first
-      Fantasy:    /\b(fly|flew|flying|flies|float(?:ed|ing|s)?|soar(?:ed|ing|s)?|levitat\w*)\b/i,
-      Love:       /\b(kiss(?:ed|es|ing)?|in love|romantic|romance|boyfriend|girlfriend|crush|hug(?:ged|ging|s)?|wedding|married|propos(?:e|ed|al))\b/i,
-      Friendship: /\b(friends?|best friend|buddy|buddies|classmates?)\b/i
-    };
-    const notFlying = /\b(plane|airplane|airport|flight|helicopter|jet|pilot|fly fishing|insect|bird)\b/i;
+    // Noah's 20 constellations (dream-themes.js). A dream goes to the RAREST
+    // constellation it mentions; the page also says its rank and what else it touches.
+    const themes = dreamThemes.themes;
+    const themeTotal = dreamThemes.total;
+    const ranking = themes.slice().sort((a, b) => b.count - a.count);
 
-    function findWorld(text) {
-      return Object.keys(rules).find(w =>
-        rules[w].test(text) && !(w === "Fantasy" && notFlying.test(text))) || null;
+    // which collage piece each constellation lives in (others: the open sky)
+    const themePiece = { dragons: "dragon", flying: "dragon", moon: "moon", castle: "castle",
+                         sky: "star", love: "couple", dance: "friendship", water: "planets" };
+
+    function findCategories(text) {
+      const found = [];
+      themes.forEach(t => {
+        const m = text.match(new RegExp("\\b(?:" + t.keywords + ")\\b", "gi"));
+        if (m) found.push({ theme: t, words: [...new Set(m.map(w => w.toLowerCase()))] });
+      });
+      return found;
     }
 
-    function popularityWords(share) {
-      if (share < 5) return "a rare kind of dream";
-      if (share < 15) return "a fairly common kind of dream";
-      return "a very common kind of dream";
+    function rarityWords(share) {
+      if (share < 1) return "a very rare dream";
+      if (share < 5) return "a rare dream";
+      if (share < 15) return "a dream many people share";
+      return "one of the most common dreams";
     }
+    const pct = c => { const p = 100 * c / themeTotal; return (p < 1 ? p.toFixed(1) : Math.round(p)) + "%"; };
+    // the part of a dream around its matching word, with that word in bold
+    function aroundWord(text, keywords) {
+      const m = new RegExp("\\b(?:" + keywords + ")\\b", "i").exec(text);
+      if (!m) return escapeHTML(shorten(text, 150));
+      const start = Math.max(0, m.index - 70), end = Math.min(text.length, m.index + m[0].length + 80);
+      let part = text.slice(start, end);
+      if (start > 0) part = "…" + part.replace(/^\S*\s/, "");
+      if (end < text.length) part = part.replace(/\s\S*$/, "") + "…";
+      return escapeHTML(part).replace(new RegExp("\\b(?:" + keywords + ")\\b", "i"), w => `<b>${w}</b>`);
+    }
+    const shorten = (t, n) => t.length <= n ? t : t.slice(0, n).replace(/\s+\S*$/, "") + "…";
 
     const escapeHTML = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
@@ -683,29 +709,34 @@
 
     const stopMotion = t => Math.floor(t * 12) / 12;      // 12 jerky steps instead of a smooth glide
 
-    function addDream(text, world) {
-      let x, y;
-      if (world) {
+    function addDream(text, theme) {
+      const pieceName = theme ? themePiece[theme.id] : null;
+      const piece = pieceName ? pieces.filter(d => d.name === pieceName) : null;
+      const pd = piece && !piece.empty() ? piece.datum() : null;
+      let x, y, world = pd && pd.world ? pd.world : null;
+      if (world) {                                        // a piece that opens a world: use its star spots
         [x, y] = layerSpots[world][Math.floor(Math.random() * layerSpots[world].length)];
-      } else {                                            // everyday dream: the open sky
+      } else if (pd) {                                    // another piece: land around it
+        x = pd.x + pd.w * (0.2 + Math.random() * 0.6);
+        y = pd.y + pd.h * (0.2 + Math.random() * 0.6);
+      } else {                                            // no piece: the open sky
         x = 560 + Math.random() * 320;
         y = 520 + Math.random() * 180;
       }
-      myDreams.push({ text, world, x, y });
+      myDreams.push({ text, world, theme: theme ? theme.id : null, x, y });
       saveMine();
 
       const star = mineLayer.append("g").attr("transform", "translate(720, 800)");
       drawMyStar(star);
       star.transition().duration(1500).ease(stopMotion).attr("transform", `translate(${x}, ${y})`);
 
-      if (world) {
-        const piece = pieces.filter(d => d.world === world);
+      if (pd) {
         setTimeout(() => piece.classed("active", true), 1500);
         setTimeout(() => piece.classed("active", false), 3200);
       }
 
-      showPage(world
-        ? `<h3>Shared</h3><p>Your dream now lives in <b>${world}</b>, beside ${worldTotals[world].toLocaleString()} dreams from DreamBank. Open ${world} to find it among them.</p>`
+      showPage(theme
+        ? `<h3>Shared</h3><p>Your dream joined the <b>${theme.label}</b> constellation, beside ${theme.count.toLocaleString()} dreams from DreamBank.</p>`
         : `<h3>Shared</h3><p>Your dream drifts in the open sky with the everyday dreams.</p>`);
       setTimeout(() => d3.select("#pageWrap").style("display", "none"), 6000);
       d3.select("#dreamInput").property("value", "");
@@ -720,25 +751,35 @@
       }
       d3.select("#dreamError").text("");
 
-      const world = findWorld(text);
-      const quote = escapeHTML(text.length > 140 ? text.slice(0, 140) + "…" : text);
-      let html;
-      if (world) {
-        const share = (100 * worldTotals[world] / totalDreams).toFixed(1);
-        html = `<h3>A dream of ${world}</h3>
+      const found = findCategories(text);
+      const quote = escapeHTML(shorten(text, 140));
+      let html, theme = null;
+
+      if (found.length) {
+        const home = found.reduce((a, b) => a.theme.count < b.theme.count ? a : b);   // the rarest one
+        theme = home.theme;
+        const rank = ranking.indexOf(theme) + 1;
+        const words = rarityWords(100 * theme.count / themeTotal);
+        html = `<h3>A dream of ${theme.label}</h3>
           <p><i>“${quote}”</i></p>
-          <p><span class="drop">${share < 10 ? "O" : "A"}</span>nly ${share}% of the ${totalDreams.toLocaleString()} dreams in DreamBank are like yours —
-          ${popularityWords(+share)}.</p>`;
-        if (share >= 10) html = html.replace('<span class="drop">A</span>nly', '<span class="drop">A</span>bout');
+          <p><span class="drop">${words[0].toUpperCase()}</span>${words.slice(1)}: ${theme.count.toLocaleString()} of the
+          ${themeTotal.toLocaleString()} dreams in DreamBank (${pct(theme.count)}) dreamed of this too.
+          It is number ${rank} of ${ranking.length} constellations, from most to least common.</p>
+          <p class="small">Because you wrote: <i>${escapeHTML(home.words.join(", "))}</i></p>`;
+        const others = found.filter(f => f !== home);
+        if (others.length) html += `<p class="small">It also touches: ${others.map(f => `${f.theme.label} (${pct(f.theme.count)})`).join(" · ")}</p>`;
+        const ex = d3.shuffle(theme.stars.slice()).slice(0, 2);
+        if (ex.length) html += `<p class="small">Dreams like yours:</p>` +
+          ex.map(s => `<p class="example">“${aroundWord(s.text, theme.keywords)}”<br><span>— ${escapeHTML(s.series)}</span></p>`).join("");
       } else {
         html = `<h3>An everyday dream</h3>
           <p><i>“${quote}”</i></p>
-          <p><span class="drop">Y</span>our dream belongs to none of our worlds. That makes it like most dreams:
-          about three in four are about ordinary life.</p>`;
+          <p><span class="drop">Y</span>our dream matches none of our constellations yet. Try describing
+          places, people, creatures or what you were doing.</p>`;
       }
       html += `<button id="shareBtn" type="button">Share</button>`;
       showPage(html);
-      d3.select("#shareBtn").on("click", () => addDream(text, world));
+      d3.select("#shareBtn").on("click", () => addDream(text, theme));
     });
     d3.select("#dreamInput").on("input", () => d3.select("#dreamError").text(""));
 
