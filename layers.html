@@ -20,9 +20,19 @@
       font-family: Georgia, "Times New Roman", serif;
       color: #f6e7a6;
     }
-    #stage { position: relative; width: 100%; max-width: 1440px; }
+    #stage { position: relative; }
     #map { width: 100%; display: block; }
-    #message { font-style: italic; opacity: 0.85; min-height: 24px; margin: 14px 0 30px; }
+    /* the collage fills the window, with no band underneath */
+    html, body { height: 100%; }
+    body { justify-content: center; overflow: hidden; }
+    #stage { width: min(100vw, 160vh); }
+    /* small caption floating at the top of the collage (only when there is something to say) */
+    #message {
+      position: absolute; top: 2.5%; left: 50%; transform: translateX(-50%);
+      margin: 0; font-style: italic; font-size: 17px; color: #f4eedc;
+      text-shadow: 0 1px 4px #000, 0 0 10px #000;
+      pointer-events: none; white-space: nowrap;
+    }
 
     #back {
       position: absolute; top: 18px; left: 18px;
@@ -139,6 +149,7 @@
   <div id="stage">
     <button id="back">&larr; back to the collage</button>
     <div id="note"></div>
+    <p id="message"></p>
     <div id="pageWrap"><div id="page"></div></div>
     <div id="dreambar">
       <form id="dreamForm">
@@ -149,14 +160,13 @@
       <div id="dreamError"></div>
     </div>
   </div>
-  <p id="message">Hover over the collage. The pieces with a name open a world.</p>
 
   <script>
     // ---------- 1. THE SKY ----------
     const W = 1440;
     const H = 900;
     const fullView = [0, 0, W, H];
-    const restMessage = "Hover over the collage. The pieces with a name open a world.";
+    const restMessage = "";
 
     const svg = d3.select("#stage")
       .insert("svg", "#back")
@@ -201,27 +211,26 @@
     merge.append("feMergeNode").attr("in", "SourceGraphic");
 
 
-    // ---------- 3. THE TITLE: paper letter tiles ----------
-    // The tiles start in a neat row, wiggle like stop motion, then scatter
-    // and keep floating in space. Everything moves at 8 frames per second.
-    const word = "DREAMTALES";
-    const tile = 58, gap = 8;
-    const rowCenter = [752, 392];
-    const rowStart = rowCenter[0] - ((word.length * (tile + gap)) - gap) / 2 + tile / 2;
-
-    // where each letter ends up floating (pixels on the collage) and its final tilt
-    const scatter = [
-      [470, 300, -18], [522, 372,  12], [612, 452, -10], [566, 282,  16], [702, 418,  -8],
-      [770, 322,  20], [880, 290, -14], [956, 236,  10], [846, 410,  22], [984, 470, -20]
+    // ---------- 3. THE TITLE: ransom-note letters cut from the first collage ----------
+    // They start in their original row, wiggle like stop motion, then break apart
+    // and float off across the sky. This layer sits UNDER the collage pieces,
+    // so some letters drift partly beneath the moon, the eye, the planets...
+    // rowX/rowY = where the letter was in the first collage; toX/toY/toR = where it floats to.
+    const letters = [
+      { src: "title-0.png", rowX: 470.5, rowY: 411.0, w: 61, h: 60, toX: 512, toY: 236, toR: -16 },
+      { src: "title-1.png", rowX: 529.0, rowY: 410.5, w: 54, h: 61, toX: 462, toY: 566, toR: 14 },
+      { src: "title-2.png", rowX: 584.5, rowY: 412.0, w: 57, h: 58, toX: 560, toY: 640, toR: -9 },
+      { src: "title-3.png", rowX: 642.0, rowY: 414.0, w: 60, h: 56, toX: 694, toY: 246, toR: 20 },
+      { src: "title-4.png", rowX: 710.0, rowY: 416.5, w: 80, h: 49, toX: 640, toY: 470, toR: -12 },
+      { src: "title-5.png", rowX: 771.5, rowY: 414.0, w: 39, h: 70, toX: 884, toY: 360, toR: 18 },
+      { src: "title-6.png", rowX: 822.0, rowY: 418.5, w: 60, h: 45, toX: 1004, toY: 238, toR: -22 },
+      { src: "title-7.png", rowX: 876.0, rowY: 410.0, w: 52, h: 62, toX: 1046, toY: 318, toR: 12 },
+      { src: "title-8.png", rowX: 926.0, rowY: 412.0, w: 52, h: 62, toX: 1160, toY: 694, toR: -18 },
+      { src: "title-9.png", rowX: 991.0, rowY: 412.0, w: 82, h: 68, toX: 1346, toY: 812, toR: 16 }
     ];
+    letters.forEach(d => { d.phase = Math.random() * Math.PI * 2; d.rowR = (Math.random() - 0.5) * 6; });
 
-    const letters = word.split("").map((ch, i) => ({
-      ch,
-      rowX: rowStart + i * (tile + gap), rowY: rowCenter[1], rowR: (Math.random() - 0.5) * 8,
-      toX: scatter[i][0], toY: scatter[i][1], toR: scatter[i][2],
-      phase: Math.random() * Math.PI * 2
-    }));
-
+    const GROW = 1.35;                  // letters grow to this size as they float off
     const titleLayer = svg.append("g").style("pointer-events", "none");
     const tiles = titleLayer.selectAll(".tile")
       .data(letters)
@@ -229,45 +238,39 @@
       .append("g")
       .attr("class", "tile")
       .attr("transform", d => `translate(${d.rowX}, ${d.rowY}) rotate(${d.rowR})`);
-    tiles.append("rect")
-      .attr("x", -tile / 2).attr("y", -tile / 2)
-      .attr("width", tile).attr("height", tile).attr("rx", 6)
-      .attr("fill", "#f4eedc")
+    tiles.append("image")
+      .attr("href", d => d.src)
+      .attr("x", d => -d.w / 2).attr("y", d => -d.h / 2)
+      .attr("width", d => d.w).attr("height", d => d.h)
       .attr("filter", "url(#paper)");
-    tiles.append("text")
-      .attr("text-anchor", "middle").attr("dy", 14)
-      .attr("font-family", "'IM Fell English', Georgia, serif")
-      .attr("font-size", 42)
-      .attr("fill", "#2a9d9a")
-      .text(d => d.ch);
 
-    const WIGGLE_FOR = 1.6;     // seconds of wiggling in place
-    const SCATTER_FOR = 1.4;    // seconds each tile takes to fly to its spot
-    const STAGGER = 0.09;       // each letter leaves a little after the one before
+    const WIGGLE_FOR = 1.6;     // seconds of wiggling in the row
+    const SCATTER_FOR = 3.2;    // seconds each letter takes to float to its spot
+    const STAGGER = 0.15;       // each letter leaves a little after the one before
     const titleStart = performance.now();
 
     setInterval(() => {
       const t = (performance.now() - titleStart) / 1000;
       tiles.attr("transform", (d, i) => {
-        let x, y, r;
+        let x, y, r, s = 1;
         if (t < WIGGLE_FOR) {                                   // 1. wiggle in the row
           x = d.rowX + (Math.random() - 0.5) * 4;
           y = d.rowY + (Math.random() - 0.5) * 4;
           r = d.rowR + (Math.random() - 0.5) * 12;
         } else {
-          let p = (t - WIGGLE_FOR - i * STAGGER) / SCATTER_FOR;   // 2. scatter
+          let p = (t - WIGGLE_FOR - i * STAGGER) / SCATTER_FOR;   // 2. break apart and float off
           p = Math.max(0, Math.min(1, p));
-          p = d3.easeCubicOut(p);
+          p = d3.easeCubicInOut(p);
           x = d.rowX + (d.toX - d.rowX) * p;
           y = d.rowY + (d.toY - d.rowY) * p;
           r = d.rowR + (d.toR - d.rowR) * p;
-          if (p === 1) {                                        // 3. float in space
-            x += Math.sin(t * 0.6 + d.phase) * 7;
-            y += Math.cos(t * 0.5 + d.phase) * 6;
-            r += Math.sin(t * 0.4 + d.phase) * 5;
-          }
+          s = 1 + (GROW - 1) * p;
+          const drift = Math.min(1, Math.max(0, (t - WIGGLE_FOR) / 2));   // 3. keep floating in space
+          x += Math.sin(t * 0.35 + d.phase) * 14 * drift;
+          y += Math.cos(t * 0.3 + d.phase) * 12 * drift;
+          r += Math.sin(t * 0.25 + d.phase) * 8 * drift;
         }
-        return `translate(${x.toFixed(1)}, ${y.toFixed(1)}) rotate(${r.toFixed(1)})`;
+        return `translate(${x.toFixed(1)}, ${y.toFixed(1)}) rotate(${r.toFixed(1)}) scale(${s.toFixed(3)})`;
       });
     }, 1000 / 8);
 
