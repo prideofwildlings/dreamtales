@@ -5,6 +5,8 @@
   <title>Dreamtales — layers experiment</title>
   <!-- d3 library -->
   <script src="https://d3js.org/d3.v7.min.js"></script>
+  <!-- old-book typeface -->
+  <link href="https://fonts.googleapis.com/css2?family=IM+Fell+English:ital@0;1&family=IM+Fell+English+SC&display=swap" rel="stylesheet">
   <!-- our data: the collage layers + the dreams -->
   <script src="layers-data.js"></script>
   <script src="dreams.js"></script>
@@ -59,6 +61,77 @@
       pointer-events: none;
     }
     #note .id { font-size: 11px; opacity: 0.6; margin-bottom: 6px; }
+
+    /* ---- the "describe:" pill ---- */
+    #dreambar {
+      position: absolute; left: 50%; bottom: 3%;
+      transform: translateX(-50%) rotate(-0.6deg);
+      width: min(560px, 78%);
+    }
+    #dreamForm {
+      display: flex; align-items: center; gap: 8px;
+      background: #efe3c4;
+      border: 2px solid rgba(90, 64, 30, 0.55);
+      border-radius: 999px;
+      padding: 6px 8px 6px 18px;
+      box-shadow: 4px 6px 10px rgba(0,0,0,0.5), inset 0 0 10px rgba(120, 80, 30, 0.25);
+      font-family: "IM Fell English", Georgia, serif;
+    }
+    #dreamForm label { font-style: italic; color: #4a3418; font-size: 18px; }
+    #dreamInput {
+      flex: 1; min-width: 0;
+      font-family: inherit; font-size: 17px; color: #2b1d0e;
+      background: transparent; border: none; border-bottom: 1px solid rgba(74, 52, 24, 0.5);
+      padding: 4px 2px; outline: none;
+    }
+    #dreamForm button {
+      font-family: "IM Fell English SC", Georgia, serif; font-size: 16px; cursor: pointer;
+      background: #4a3418; color: #efe3c4; border: none; border-radius: 999px; padding: 6px 14px;
+    }
+    #dreamError { color: #f3b8a8; font-family: "IM Fell English", Georgia, serif; font-style: italic;
+                  font-size: 15px; text-align: center; margin-top: 6px; text-shadow: 0 1px 3px #000; }
+
+    /* ---- the torn book page that answers ---- */
+    #pageWrap {
+      position: absolute; left: 50%; bottom: 13%;
+      width: min(520px, 76%);
+      transform: translateX(-50%);
+      filter: drop-shadow(6px 9px 7px rgba(0,0,0,0.55));   /* shadow follows the torn edge */
+      display: none;
+    }
+    #page {
+      padding: 34px 40px 30px;
+      color: #2b1d0e;
+      font-family: "IM Fell English", Georgia, serif;
+      font-size: 18px; line-height: 1.5;
+      /* parchment: base colour + stains + grain */
+      background-color: #ead9b0;
+      background-image:
+        radial-gradient(ellipse at 20% 15%, rgba(255,250,230,0.55), transparent 55%),
+        radial-gradient(ellipse at 85% 80%, rgba(140, 95, 40, 0.28), transparent 50%),
+        radial-gradient(circle at 70% 25%, rgba(150, 100, 45, 0.18), transparent 22%),
+        url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3'/><feColorMatrix values='0 0 0 0 0.35  0 0 0 0 0.24  0 0 0 0 0.1  0 0 0 0.22 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+      box-shadow: inset 0 0 38px rgba(110, 70, 25, 0.55);   /* darker, burnt-looking edges */
+    }
+    #page h3 {
+      font-family: "IM Fell English SC", Georgia, serif; font-weight: normal;
+      font-size: 26px; margin: 0 0 8px; letter-spacing: 0.03em;
+    }
+    #page p { margin: 0 0 14px; }
+    #page .drop { float: left; font-size: 54px; line-height: 0.8; padding: 6px 6px 0 0; font-family: "IM Fell English SC", Georgia, serif; }
+    #shareBtn {
+      font-family: "IM Fell English SC", Georgia, serif; font-size: 18px;
+      background: transparent; color: #2b1d0e; cursor: pointer;
+      border: 2px solid #2b1d0e; padding: 4px 18px; transform: rotate(-1deg);
+    }
+    #shareBtn:hover { background: rgba(43, 29, 14, 0.1); }
+    /* the page appears in 4 jerky stop-motion steps */
+    @keyframes tearIn {
+      from { transform: translateY(30px) rotate(-7deg) scale(0.7); opacity: 0; }
+      to   { transform: translateY(0) rotate(-1.5deg) scale(1); opacity: 1; }
+    }
+    #page.show { animation: tearIn 0.5s steps(4) forwards; }
+    .hidebar { display: none !important; }
   </style>
 </head>
 <body>
@@ -66,6 +139,15 @@
   <div id="stage">
     <button id="back">&larr; back to the collage</button>
     <div id="note"></div>
+    <div id="pageWrap"><div id="page"></div></div>
+    <div id="dreambar">
+      <form id="dreamForm">
+        <label for="dreamInput">describe:</label>
+        <input id="dreamInput" type="text" placeholder="a dream you had…" maxlength="600" autocomplete="off">
+        <button type="submit">Find its world</button>
+      </form>
+      <div id="dreamError"></div>
+    </div>
   </div>
   <p id="message">Hover over the collage. The pieces with a name open a world.</p>
 
@@ -119,23 +201,75 @@
     merge.append("feMergeNode").attr("in", "SourceGraphic");
 
 
-    // ---------- 3. THE TITLE ----------
-    const title = svg.append("g")
-      .attr("transform", "translate(720, 410)")
-      .style("pointer-events", "none");
-    title.append("text")
-      .attr("text-anchor", "middle")
-      .attr("font-size", 92)
-      .attr("letter-spacing", 6)
+    // ---------- 3. THE TITLE: paper letter tiles ----------
+    // The tiles start in a neat row, wiggle like stop motion, then scatter
+    // and keep floating in space. Everything moves at 8 frames per second.
+    const word = "DREAMTALES";
+    const tile = 58, gap = 8;
+    const rowCenter = [752, 392];
+    const rowStart = rowCenter[0] - ((word.length * (tile + gap)) - gap) / 2 + tile / 2;
+
+    // where each letter ends up floating (pixels on the collage) and its final tilt
+    const scatter = [
+      [470, 300, -18], [522, 372,  12], [612, 452, -10], [566, 282,  16], [702, 418,  -8],
+      [770, 322,  20], [880, 290, -14], [956, 236,  10], [846, 410,  22], [984, 470, -20]
+    ];
+
+    const letters = word.split("").map((ch, i) => ({
+      ch,
+      rowX: rowStart + i * (tile + gap), rowY: rowCenter[1], rowR: (Math.random() - 0.5) * 8,
+      toX: scatter[i][0], toY: scatter[i][1], toR: scatter[i][2],
+      phase: Math.random() * Math.PI * 2
+    }));
+
+    const titleLayer = svg.append("g").style("pointer-events", "none");
+    const tiles = titleLayer.selectAll(".tile")
+      .data(letters)
+      .enter()
+      .append("g")
+      .attr("class", "tile")
+      .attr("transform", d => `translate(${d.rowX}, ${d.rowY}) rotate(${d.rowR})`);
+    tiles.append("rect")
+      .attr("x", -tile / 2).attr("y", -tile / 2)
+      .attr("width", tile).attr("height", tile).attr("rx", 6)
       .attr("fill", "#f4eedc")
-      .text("Dreamtales");
-    title.append("text")
-      .attr("text-anchor", "middle")
-      .attr("y", 56)
-      .attr("font-size", 34)
-      .attr("font-style", "italic")
-      .attr("fill", "#f4eedc")
-      .text("How popular is your dream?");
+      .attr("filter", "url(#paper)");
+    tiles.append("text")
+      .attr("text-anchor", "middle").attr("dy", 14)
+      .attr("font-family", "'IM Fell English', Georgia, serif")
+      .attr("font-size", 42)
+      .attr("fill", "#2a9d9a")
+      .text(d => d.ch);
+
+    const WIGGLE_FOR = 1.6;     // seconds of wiggling in place
+    const SCATTER_FOR = 1.4;    // seconds each tile takes to fly to its spot
+    const STAGGER = 0.09;       // each letter leaves a little after the one before
+    const titleStart = performance.now();
+
+    setInterval(() => {
+      const t = (performance.now() - titleStart) / 1000;
+      tiles.attr("transform", (d, i) => {
+        let x, y, r;
+        if (t < WIGGLE_FOR) {                                   // 1. wiggle in the row
+          x = d.rowX + (Math.random() - 0.5) * 4;
+          y = d.rowY + (Math.random() - 0.5) * 4;
+          r = d.rowR + (Math.random() - 0.5) * 12;
+        } else {
+          let p = (t - WIGGLE_FOR - i * STAGGER) / SCATTER_FOR;   // 2. scatter
+          p = Math.max(0, Math.min(1, p));
+          p = d3.easeCubicOut(p);
+          x = d.rowX + (d.toX - d.rowX) * p;
+          y = d.rowY + (d.toY - d.rowY) * p;
+          r = d.rowR + (d.toR - d.rowR) * p;
+          if (p === 1) {                                        // 3. float in space
+            x += Math.sin(t * 0.6 + d.phase) * 7;
+            y += Math.cos(t * 0.5 + d.phase) * 6;
+            r += Math.sin(t * 0.4 + d.phase) * 5;
+          }
+        }
+        return `translate(${x.toFixed(1)}, ${y.toFixed(1)}) rotate(${r.toFixed(1)})`;
+      });
+    }, 1000 / 8);
 
 
     // ---------- 4. THE LAYERS (from layers-data.js, bottom to top) ----------
@@ -218,6 +352,9 @@
       veil.transition().duration(900).attr("opacity", 0.65);
       zoomTo(viewAround(d));
       d3.select("#back").style("display", "block");
+      d3.select("#dreambar").classed("hidebar", true);
+      d3.select("#pageWrap").style("display", "none");
+      mineLayer.style("display", "none");
       drawStars(d);
     }
 
@@ -229,6 +366,8 @@
       veil.transition().duration(900).attr("opacity", 0);
       zoomTo(fullView);
       d3.select("#back").style("display", "none");
+      d3.select("#dreambar").classed("hidebar", false);
+      mineLayer.style("display", null);
       d3.select("#note").style("display", "none");
       starLayer.selectAll("*").remove();
       d3.select("#message").text(restMessage);
@@ -378,6 +517,155 @@
     // hovering the dragon makes it breathe fire right away
     dragonGroup.on("mouseenter.flame", () => { step = 0; });
 
+
+
+    // ---------- 9. DESCRIBE YOUR DREAM ----------
+    // The visitor writes a dream; the same keyword rules we used on DreamBank pick
+    // ONE world; a torn book page tells them how popular their kind of dream is;
+    // "Share" sends it into that world as a new star (in stop-motion steps).
+    // No match = an everyday dream: its star drifts into the open sky.
+    // Saved only in this visitor's own browser (localStorage) — nobody else sees it.
+
+    const rules = {                       // checked in this order: rarest world first
+      Fantasy:    /\b(fly|flew|flying|flies|float(?:ed|ing|s)?|soar(?:ed|ing|s)?|levitat\w*)\b/i,
+      Love:       /\b(kiss(?:ed|es|ing)?|in love|romantic|romance|boyfriend|girlfriend|crush|hug(?:ged|ging|s)?|wedding|married|propos(?:e|ed|al))\b/i,
+      Friendship: /\b(friends?|best friend|buddy|buddies|classmates?)\b/i
+    };
+    const notFlying = /\b(plane|airplane|airport|flight|helicopter|jet|pilot|fly fishing|insect|bird)\b/i;
+
+    function findWorld(text) {
+      return Object.keys(rules).find(w =>
+        rules[w].test(text) && !(w === "Fantasy" && notFlying.test(text))) || null;
+    }
+
+    function popularityWords(share) {
+      if (share < 5) return "a rare kind of dream";
+      if (share < 15) return "a fairly common kind of dream";
+      return "a very common kind of dream";
+    }
+
+    const escapeHTML = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+    // a new ragged tear every time the page appears (a jagged outline, in % of the page)
+    function tornEdge() {
+      const pts = [];
+      const n = 22;
+      const j = () => Math.random() * 3.2;                 // how deep each tear bites, in %
+      for (let i = 0; i <= n; i++) pts.push([i * 100 / n, j()]);               // top
+      for (let i = 1; i <= n / 2; i++) pts.push([100 - j(), i * 100 / (n / 2)]); // right
+      for (let i = n - 1; i >= 0; i--) pts.push([i * 100 / n, 100 - j()]);     // bottom
+      for (let i = n / 2 - 1; i >= 1; i--) pts.push([j(), i * 100 / (n / 2)]); // left
+      return "polygon(" + pts.map(p => `${p[0].toFixed(1)}% ${p[1].toFixed(1)}%`).join(", ") + ")";
+    }
+
+    function showPage(html) {
+      const page = d3.select("#page").html(html).classed("show", false)
+        .style("clip-path", tornEdge());
+      d3.select("#pageWrap").style("display", "block");
+      void page.node().offsetWidth;                         // restart the tear-in animation
+      page.classed("show", true);
+    }
+
+    // the visitor's own dreams (kept between visits in this browser only)
+    let myDreams = [];
+    try { myDreams = JSON.parse(localStorage.getItem("dreamtales-mine") || "[]"); } catch (e) { myDreams = []; }
+    function saveMine() {
+      try { localStorage.setItem("dreamtales-mine", JSON.stringify(myDreams)); } catch (e) {}
+    }
+
+    const mineLayer = svg.append("g").style("pointer-events", "none");
+
+    function drawMyStar(g) {
+      g.append("circle").attr("r", 11).attr("fill", "#ffffff").attr("opacity", 0.35);
+      g.append("path")
+        .attr("d", "M0,-10 L2.4,-2.4 L10,0 L2.4,2.4 L0,10 L-2.4,2.4 L-10,0 L-2.4,-2.4 Z")
+        .attr("fill", "#ffffff")
+        .attr("filter", "url(#boil)");
+    }
+    myDreams.forEach(m => drawMyStar(mineLayer.append("g").attr("transform", `translate(${m.x}, ${m.y})`)));
+
+    const stopMotion = t => Math.floor(t * 12) / 12;      // 12 jerky steps instead of a smooth glide
+
+    function addDream(text, world) {
+      let x, y;
+      if (world) {
+        [x, y] = layerSpots[world][Math.floor(Math.random() * layerSpots[world].length)];
+      } else {                                            // everyday dream: the open sky
+        x = 560 + Math.random() * 320;
+        y = 520 + Math.random() * 180;
+      }
+      myDreams.push({ text, world, x, y });
+      saveMine();
+
+      const star = mineLayer.append("g").attr("transform", "translate(720, 800)");
+      drawMyStar(star);
+      star.transition().duration(1500).ease(stopMotion).attr("transform", `translate(${x}, ${y})`);
+
+      if (world) {
+        const piece = pieces.filter(d => d.world === world);
+        setTimeout(() => piece.classed("active", true), 1500);
+        setTimeout(() => piece.classed("active", false), 3200);
+      }
+
+      showPage(world
+        ? `<h3>Shared</h3><p>Your dream now lives in <b>${world}</b>, beside ${worldTotals[world].toLocaleString()} dreams from DreamBank. Open ${world} to find it among them.</p>`
+        : `<h3>Shared</h3><p>Your dream drifts in the open sky with the everyday dreams.</p>`);
+      setTimeout(() => d3.select("#pageWrap").style("display", "none"), 6000);
+      d3.select("#dreamInput").property("value", "");
+    }
+
+    d3.select("#dreamForm").on("submit", function (event) {
+      event.preventDefault();
+      const text = d3.select("#dreamInput").property("value").trim();
+      if (text.length < 5) {
+        d3.select("#dreamError").text("Write a few words about your dream first.");
+        return;
+      }
+      d3.select("#dreamError").text("");
+
+      const world = findWorld(text);
+      const quote = escapeHTML(text.length > 140 ? text.slice(0, 140) + "…" : text);
+      let html;
+      if (world) {
+        const share = (100 * worldTotals[world] / totalDreams).toFixed(1);
+        html = `<h3>A dream of ${world}</h3>
+          <p><i>“${quote}”</i></p>
+          <p><span class="drop">${share < 10 ? "O" : "A"}</span>nly ${share}% of the ${totalDreams.toLocaleString()} dreams in DreamBank are like yours —
+          ${popularityWords(+share)}.</p>`;
+        if (share >= 10) html = html.replace('<span class="drop">A</span>nly', '<span class="drop">A</span>bout');
+      } else {
+        html = `<h3>An everyday dream</h3>
+          <p><i>“${quote}”</i></p>
+          <p><span class="drop">Y</span>our dream belongs to none of our worlds. That makes it like most dreams:
+          about three in four are about ordinary life.</p>`;
+      }
+      html += `<button id="shareBtn" type="button">Share</button>`;
+      showPage(html);
+      d3.select("#shareBtn").on("click", () => addDream(text, world));
+    });
+    d3.select("#dreamInput").on("input", () => d3.select("#dreamError").text(""));
+
+    // the visitor's dreams also appear (as white stars) when a world is opened
+    const originalDrawStars = drawStars;
+    drawStars = function (piece) {
+      originalDrawStars(piece);
+      const mineHere = myDreams.filter(m => m.world === piece.world);
+      const myStars = starLayer.selectAll(".mystar")
+        .data(mineHere)
+        .enter()
+        .append("g")
+        .attr("class", "star mystar")
+        .attr("transform", m => `translate(${m.x}, ${m.y})`);
+      myStars.each(function () { drawMyStar(d3.select(this)); });
+      myStars
+        .on("mouseover", (event, m) => d3.select("#note").style("display", "block")
+          .html(`<div class="id">your dream</div>${escapeHTML(m.text)}`))
+        .on("mousemove", function (event) {
+          const [mx, my] = d3.pointer(event, document.getElementById("stage"));
+          d3.select("#note").style("left", (mx + 18) + "px").style("top", (my + 18) + "px");
+        })
+        .on("mouseout", () => d3.select("#note").style("display", "none"));
+    };
 
     // ---------- 7. HOVER + CLICK ----------
     worldPieces
