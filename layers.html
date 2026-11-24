@@ -54,6 +54,8 @@
       transform: translate(-4px, -8px) rotate(-1.5deg) scale(1.04);
     }
     .piece.world { cursor: pointer; }
+    /* "plain" pieces blend into the sky until hovered, then become paper */
+    .piece.plain:hover .art image, .piece.plain.active .art image { filter: url(#paper); }
     .piece .tag { opacity: 0; transition: opacity 0.2s; }
     .piece:hover .tag, .piece.active .tag { opacity: 1; }
     .zoomed .piece:not(.active) { pointer-events: none; }
@@ -289,7 +291,7 @@
       .data(layers)
       .enter()
       .append("g")
-      .attr("class", d => d.world ? "piece world" : "piece");
+      .attr("class", d => "piece" + (d.world ? " world" : "") + (d.plain ? " plain" : ""));
 
     pieces.append("path")                       // invisible area that catches the mouse
       .attr("d", d => d.hit)
@@ -301,7 +303,7 @@
       .attr("href", d => d.image)
       .attr("x", d => d.x).attr("y", d => d.y)
       .attr("width", d => d.w).attr("height", d => d.h)
-      .attr("filter", "url(#paper)")
+      .attr("filter", d => d.plain ? null : "url(#paper)")
       .style("pointer-events", "none");
 
     // name tags, only for pieces that open a world
