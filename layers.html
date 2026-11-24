@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Dreamtales — layers experiment</title>
+  <!-- d3 library -->
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <!-- our data: the collage layers + the dreams -->
+  <script src="layers-data.js"></script>
+  <script src="dreams.js"></script>
+  <style>
+    body {
+      margin: 0;
+      background: #15112a;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      font-family: Georgia, "Times New Roman", serif;
+      color: #f6e7a6;
+    }
+    #stage { position: relative; width: 100%; max-width: 1440px; }
+    #map { width: 100%; display: block; }
+    #message { font-style: italic; opacity: 0.85; min-height: 24px; margin: 14px 0 30px; }
+
+    #back {
+      position: absolute; top: 18px; left: 18px;
+      display: none;
+      font-family: "Courier New", monospace; font-size: 16px;
+      background: #f4eedc; color: #2a2350;
+      border: none; padding: 8px 14px; cursor: pointer;
+      transform: rotate(-2deg);
+      box-shadow: 4px 6px 10px rgba(0,0,0,0.5);
+    }
+
+    /* every piece is a paper cut-out glued on the sky; on hover it lifts */
+    .piece .art {
+      transform-box: fill-box; transform-origin: center;
+      transition: transform 0.25s;
+    }
+    .piece:hover .art, .piece.active .art {
+      transform: translate(-4px, -8px) rotate(-1.5deg) scale(1.04);
+    }
+    .piece.world { cursor: pointer; }
+    .piece .tag { opacity: 0; transition: opacity 0.2s; }
+    .piece:hover .tag, .piece.active .tag { opacity: 1; }
+    .zoomed .piece:not(.active) { pointer-events: none; }
+    .zoomed .piece.active { cursor: default; }
+
+    .star { cursor: pointer; }
+    .star .glow { animation: twinkle 2.4s ease-in-out infinite; }
+    @keyframes twinkle { 0%,100% { opacity: 0.35; } 50% { opacity: 0.8; } }
+
+    #note {
+      position: absolute; display: none; max-width: 300px;
+      background: #f4eedc; color: #2a2350;
+      font-family: "Courier New", monospace; font-size: 14px; line-height: 1.45;
+      padding: 14px 16px; transform: rotate(-1.5deg);
+      box-shadow: 5px 8px 14px rgba(0,0,0,0.55);
+      pointer-events: none;
+    }
+    #note .id { font-size: 11px; opacity: 0.6; margin-bottom: 6px; }
+  </style>
+</head>
+<body>
+
+  <div id="stage">
+    <button id="back">&larr; back to the collage</button>
+    <div id="note"></div>
+  </div>
+  <p id="message">Hover over the collage. The pieces with a name open a world.</p>
+
+  <script>
+    // ---------- 1. THE SKY ----------
+    const W = 1440;
+    const H = 900;
+    const fullView = [0, 0, W, H];
+    const restMessage = "Hover over the collage. The pieces with a name open a world.";
+
+    const svg = d3.select("#stage")
+      .insert("svg", "#back")
+      .attr("id", "map")
+      .attr("viewBox", fullView.join(" "));
+
+    svg.append("image")
+      .attr("href", "layers/sky.jpg")
+      .attr("width", W).attr("height", H);
+
+
+    // ---------- 2. PAPER-CUT EFFECT ----------
+    // cream paper margin with a rough edge + a soft shadow under each piece
+    const defs = svg.append("defs");
+    const paper = defs.append("filter")
+      .attr("id", "paper")
+      .attr("x", "-20%").attr("y", "-20%")
+      .attr("width", "140%").attr("height", "140%");
+    paper.append("feMorphology")
+      .attr("in", "SourceAlpha").attr("operator", "dilate").attr("radius", 5)
+      .attr("result", "grown");
+    paper.append("feTurbulence")
+      .attr("type", "fractalNoise").attr("baseFrequency", 0.06).attr("numOctaves", 2)
+      .attr("result", "noise");
+    paper.append("feDisplacementMap")
+      .attr("in", "grown").attr("in2", "noise").attr("scale", 6)
+      .attr("xChannelSelector", "R").attr("yChannelSelector", "G")
+      .attr("result", "rough");
+    paper.append("feFlood").attr("flood-color", "#f4eedc");
+    paper.append("feComposite").attr("in2", "rough").attr("operator", "in")
+      .attr("result", "border");
+    paper.append("feGaussianBlur").attr("in", "rough").attr("stdDeviation", 5)
+      .attr("result", "blur");
+    paper.append("feOffset").attr("in", "blur").attr("dx", 5).attr("dy", 8)
+      .attr("result", "offset");
+    paper.append("feFlood").attr("flood-color", "#000").attr("flood-opacity", 0.55);
+    paper.append("feComposite").attr("in2", "offset").attr("operator", "in")
+      .attr("result", "shadow");
+    const merge = paper.append("feMerge");
+    merge.append("feMergeNode").attr("in", "shadow");
+    merge.append("feMergeNode").attr("in", "border");
+    merge.append("feMergeNode").attr("in", "SourceGraphic");
+
+
+    // ---------- 3. THE TITLE ----------
+    const title = svg.append("g")
+      .attr("transform", "translate(720, 410)")
+      .style("pointer-events", "none");
+    title.append("text")
+      .attr("text-anchor", "middle")
+      .attr("font-size", 92)
+      .attr("letter-spacing", 6)
+      .attr("fill", "#f4eedc")
+      .text("Dreamtales");
+    title.append("text")
+      .attr("text-anchor", "middle")
+      .attr("y", 56)
+      .attr("font-size", 34)
+      .attr("font-style", "italic")
+      .attr("fill", "#f4eedc")
+      .text("How popular is your dream?");
+
+
+    // ---------- 4. THE LAYERS (from layers-data.js, bottom to top) ----------
+    const pieces = svg.selectAll(".piece")
+      .data(layers)
+      .enter()
+      .append("g")
+      .attr("class", d => d.world ? "piece world" : "piece");
+
+    pieces.append("path")                       // invisible area that catches the mouse
+      .attr("d", d => d.hit)
+      .attr("fill", "rgba(0,0,0,0)");
+
+    pieces.append("image")                      // the paper piece itself
+      .attr("class", "art")
+      .attr("href", d => d.image)
+      .attr("x", d => d.x).attr("y", d => d.y)
+      .attr("width", d => d.w).attr("height", d => d.h)
+      .attr("filter", "url(#paper)")
+      .style("pointer-events", "none");
+
+    // name tags, only for pieces that open a world
+    const worldPieces = pieces.filter(d => d.world);
+    const tags = worldPieces.append("g")
+      .attr("class", "tag")
+      .attr("transform", d => `translate(${d.tag[0]}, ${d.tag[1]}) rotate(${d.tilt})`)
+      .style("pointer-events", "none");
+    tags.append("rect")
+      .attr("x", d => -(d.world.length * 9 + 18)).attr("y", -20)
+      .attr("width", d => d.world.length * 18 + 36).attr("height", 36)
+      .attr("fill", "#f4eedc")
+      .attr("filter", "url(#paper)");
+    tags.append("text")
+      .attr("text-anchor", "middle").attr("dy", 6)
+      .attr("font-family", "'Courier New', monospace").attr("font-size", 22)
+      .attr("fill", "#2a2350")
+      .text(d => d.world);
+
+    // dark veil + star layer, drawn above everything else
+    const veil = svg.append("rect")
+      .attr("width", W).attr("height", H)
+      .attr("fill", "#0b0918").attr("opacity", 0)
+      .style("pointer-events", "none");
+    const focusLayer = svg.append("g");       // the open world's piece is moved here, above the veil
+    const starLayer = svg.append("g");
+
+
+    // ---------- 5. ZOOM IN / OUT ----------
+    function zoomTo(view) {
+      svg.transition().duration(900).ease(d3.easeCubicInOut)
+        .attrTween("viewBox", () => {
+          const from = svg.attr("viewBox").split(" ").map(Number);
+          const i = d3.interpolate(from, view);
+          return t => i(t).join(" ");
+        });
+    }
+
+    function viewAround(d) {
+      const pad = 70;
+      let w = d.w + pad * 2;
+      let h = d.h + pad * 2;
+      if (w / h < W / H) w = h * (W / H); else h = w / (W / H);
+      const cx = d.x + d.w / 2;
+      const cy = d.y + d.h / 2;
+      const x = Math.max(0, Math.min(W - w, cx - w / 2));
+      const y = Math.max(0, Math.min(H - h, cy - h / 2));
+      return [x, y, w, h];
+    }
+
+    let openNode = null;     // the piece that is open
+    let openNext = null;     // what it sat in front of, to put it back
+
+    function openWorld(event, d) {
+      if (svg.classed("zoomed")) return;
+      svg.classed("zoomed", true);
+      openNode = this;
+      openNext = this.nextSibling;
+      focusLayer.node().appendChild(this);          // lift it above the veil
+      d3.select(this).classed("active", true);
+      veil.transition().duration(900).attr("opacity", 0.65);
+      zoomTo(viewAround(d));
+      d3.select("#back").style("display", "block");
+      drawStars(d);
+    }
+
+    function closeWorld() {
+      svg.classed("zoomed", false);
+      d3.select(openNode).classed("active", false);
+      openNode.parentNode.removeChild(openNode);
+      svg.node().insertBefore(openNode, openNext);  // put it back in its layer
+      veil.transition().duration(900).attr("opacity", 0);
+      zoomTo(fullView);
+      d3.select("#back").style("display", "none");
+      d3.select("#note").style("display", "none");
+      starLayer.selectAll("*").remove();
+      d3.select("#message").text(restMessage);
+    }
+
+    d3.select("#back").on("click", closeWorld);
+
+
+    // ---------- 6. STARS = DREAMS ----------
+    function drawStars(piece) {
+      const list = dreams.filter(dr => dr.world === piece.world);
+      const spots = layerSpots[piece.world];
+      const total = worldTotals[piece.world];
+      const share = (100 * total / totalDreams).toFixed(1);
+      d3.select("#message")
+        .text(`${piece.world} · ${total.toLocaleString()} of ${totalDreams.toLocaleString()} dreams (${share}%) · each star ≈ ${dreamsPerStar} dreams`);
+
+      const stars = starLayer.selectAll(".star")
+        .data(list)
+        .enter()
+        .append("g")
+        .attr("class", "star")
+        .attr("transform", (dr, i) => `translate(${spots[i % spots.length][0]}, ${spots[i % spots.length][1]})`)
+        .attr("opacity", 0);
+
+      stars.append("circle")
+        .attr("class", "glow")
+        .attr("r", 7).attr("fill", "#f2d14b").attr("opacity", 0.4)
+        .style("animation-delay", () => `${Math.random() * 2.4}s`);
+      stars.append("path")
+        .attr("d", "M0,-6 L1.4,-1.4 L6,0 L1.4,1.4 L0,6 L-1.4,1.4 L-6,0 L-1.4,-1.4 Z")
+        .attr("fill", "#fff6c8");
+
+      stars.transition()
+        .delay((dr, i) => 900 + i * 40)
+        .duration(400)
+        .attr("opacity", 1);
+
+      stars
+        .on("mouseover", function (event, dr) {
+          d3.select("#note")
+            .style("display", "block")
+            .html(`<div class="id">${dr.dreamer} · ${dr.gender} · ${dr.year}</div>${dr.text}`);
+        })
+        .on("mousemove", function (event) {
+          const [mx, my] = d3.pointer(event, document.getElementById("stage"));
+          d3.select("#note").style("left", (mx + 18) + "px").style("top", (my + 18) + "px");
+        })
+        .on("mouseout", () => d3.select("#note").style("display", "none"));
+    }
+
+
+    // ---------- 7. HOVER + CLICK ----------
+    worldPieces
+      .on("mouseover", (event, d) => {
+        if (!svg.classed("zoomed")) d3.select("#message").text(`The world of ${d.world}`);
+      })
+      .on("mouseout", () => {
+        if (!svg.classed("zoomed")) d3.select("#message").text(restMessage);
+      })
+      .on("click", openWorld);
+  </script>
+
+</body>
+</html>
