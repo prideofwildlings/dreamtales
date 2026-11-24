@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Dreamtales</title>
+  <!-- d3 library -->
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <!-- our data: star positions + the dreams -->
+  <script src="spots.js"></script>
+  <script src="dreams.js"></script>
+  <style>
+    body {
+      margin: 0;
+      background: #15112a;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      font-family: Georgia, "Times New Roman", serif;
+      color: #f6e7a6;
+    }
+    #stage { position: relative; width: 100%; max-width: 1440px; }
+    #map { width: 100%; display: block; }
+    #message { font-style: italic; opacity: 0.85; min-height: 24px; margin: 14px 0 30px; }
+
+    /* back button: hidden until we zoom into a world */
+    #back {
+      position: absolute; top: 18px; left: 18px;
+      display: none;
+      font-family: "Courier New", monospace; font-size: 16px;
+      background: #f4eedc; color: #2a2350;
+      border: none; padding: 8px 14px; cursor: pointer;
+      transform: rotate(-2deg);
+      box-shadow: 4px 6px 10px rgba(0,0,0,0.5);
+    }
+
+    .world { cursor: pointer; }
+    /* paper cut-out: hidden until hover (or while zoomed in), then lifted */
+    .world .cutout {
+      opacity: 0;
+      transform-box: fill-box; transform-origin: center;
+      transition: opacity 0.2s, transform 0.25s;
+    }
+    .world:hover .cutout, .world.active .cutout {
+      opacity: 1;
+      transform: translate(-4px, -8px) rotate(-1.5deg) scale(1.04);
+    }
+    .world .tag { opacity: 0; transition: opacity 0.2s; }
+    .world:hover .tag, .world.active .tag { opacity: 1; }
+    /* while zoomed in, the other worlds stop reacting */
+    .zoomed .world:not(.active) { pointer-events: none; }
+    .zoomed .world.active { cursor: default; }
+
+    /* stars twinkle gently */
+    .star { cursor: pointer; transform-box: fill-box; transform-origin: center; }
+    .star .glow { animation: twinkle 2.4s ease-in-out infinite; }
+    @keyframes twinkle { 0%,100% { opacity: 0.35; } 50% { opacity: 0.8; } }
+    .star:hover .core { transform: scale(1.6); transform-box: fill-box; transform-origin: center; }
+
+    /* the paper note that shows a dream on hover */
+    #note {
+      position: absolute;
+      display: none;
+      max-width: 300px;
+      background: #f4eedc;
+      color: #2a2350;
+      font-family: "Courier New", monospace;
+      font-size: 14px;
+      line-height: 1.45;
+      padding: 14px 16px;
+      transform: rotate(-1.5deg);
+      box-shadow: 5px 8px 14px rgba(0,0,0,0.55);
+      pointer-events: none;
+    }
+    #note .id { font-size: 11px; opacity: 0.6; margin-bottom: 6px; }
+  </style>
+</head>
+<body>
+
+  <div id="stage">
+    <!-- the collage + worlds + stars are drawn here by d3 -->
+    <button id="back">&larr; back to the collage</button>
+    <div id="note"></div>
+  </div>
+  <p id="message">Hover over the collage to find a world.</p>
+
+  <script>
+    // ---------- 1. THE COLLAGE ----------
+    // The SVG uses the image's own size (1440 x 900) as its coordinate system,
+    // so every number below is a pixel position on the collage.
+    const W = 1440;
+    const H = 900;
+    const fullView = [0, 0, W, H];          // the whole collage
+    const restMessage = "Hover over the collage to find a world.";
+
+    const svg = d3.select("#stage")
+      .insert("svg", "#back")
+      .attr("id", "map")
+      .attr("viewBox", fullView.join(" "));
+
+    svg.append("image")
+      .attr("href", "background.jpg")
+      .attr("width", W)
+      .attr("height", H);
+
+    // dark veil: invisible normally, darkens the collage when we zoom in
+    const veil = svg.append("rect")
+      .attr("width", W).attr("height", H)
+      .attr("fill", "#0b0918")
+      .attr("opacity", 0)
+      .style("pointer-events", "none");
+
+
+    // ---------- 2. PAPER-CUT EFFECT (an SVG filter) ----------
+    // Grows the cut-out's shape into a cream paper border with a rough edge,
+    // adds a soft shadow, then puts the picture back on top.
+    const defs = svg.append("defs");
+    const paper = defs.append("filter")
+      .attr("id", "paper")
+      .attr("x", "-20%").attr("y", "-20%")
+      .attr("width", "140%").attr("height", "140%");
+    paper.append("feMorphology")
+      .attr("in", "SourceAlpha").attr("operator", "dilate").attr("radius", 6)
+      .attr("result", "grown");
+    paper.append("feTurbulence")
+      .attr("type", "fractalNoise").attr("baseFrequency", 0.06).attr("numOctaves", 2)
+      .attr("result", "noise");
+    paper.append("feDisplacementMap")
+      .attr("in", "grown").attr("in2", "noise").attr("scale", 6)
+      .attr("xChannelSelector", "R").attr("yChannelSelector", "G")
+      .attr("result", "rough");
+    paper.append("feFlood").attr("flood-color", "#f4eedc");
+    paper.append("feComposite").attr("in2", "rough").attr("operator", "in")
+      .attr("result", "border");
+    paper.append("feGaussianBlur").attr("in", "rough").attr("stdDeviation", 5)
+      .attr("result", "blur");
+    paper.append("feOffset").attr("in", "blur").attr("dx", 5).attr("dy", 9)
+      .attr("result", "offset");
+    paper.append("feFlood").attr("flood-color", "#000").attr("flood-opacity", 0.55);
+    paper.append("feComposite").attr("in2", "offset").attr("operator", "in")
+      .attr("result", "shadow");
+    const merge = paper.append("feMerge");
+    merge.append("feMergeNode").attr("in", "shadow");
+    merge.append("feMergeNode").attr("in", "border");
+    merge.append("feMergeNode").attr("in", "SourceGraphic");
+
+
+    // ---------- 3. THE WORLDS (data) ----------
+    // image = the element cut out of the collage (transparent PNG)
+    // hit = the outline the mouse reacts to
+    const worlds = [
+      {
+        name: "Fantasy",
+        image: "cut-dragon.png",
+        x: 95, y: 247, w: 322, h: 232,   // where the cut-out sits on the collage
+        tag: [255, 228], tilt: -4,          // paper name tag position + angle
+        dreams: 100,                                    // PLACEHOLDER until we load DreamBank
+        hit: "M95,297L95,321L116,318L119,331L138,331L142,326L172,317L193,316L205,307L224,301L239,302L254,315L262,328L258,333L247,338L228,340L228,358L239,363L224,370L217,389L216,401L212,404L212,421L220,436L238,436L242,431L262,425L262,408L245,405L248,399L266,399L269,396L271,377L292,375L301,367L322,367L326,364L338,374L352,393L354,402L348,414L348,434L363,444L363,482L366,486L384,486L409,457L416,444L424,421L424,387L413,328L398,328L392,320L366,318L375,316L379,304L377,282L329,285L321,289L308,265L303,244L288,239L199,246L162,267L160,296Z"
+      },
+      {
+        name: "Love",
+        image: "cut-love.png",
+        x: 1210, y: 127, w: 110, h: 167,   // where the cut-out sits on the collage
+        tag: [1268, 104], tilt: 3,          // paper name tag position + angle
+        dreams: 100,                                    // PLACEHOLDER until we load DreamBank
+        hit: "M1310,121L1279,119L1277,133L1266,134L1262,138L1261,146L1243,151L1225,171L1221,182L1221,206L1224,221L1232,225L1231,231L1207,256L1207,261L1202,266L1202,282L1207,284L1218,301L1235,301L1235,283L1239,280L1246,286L1272,287L1278,278L1282,283L1298,283L1301,279L1309,279L1310,270L1323,268L1323,252L1315,234L1319,213L1318,183L1326,170L1327,144L1323,131Z"
+      },
+      {
+        name: "Friendship",
+        image: "cut-friendship.png",
+        x: 1108, y: 563, w: 123, h: 120,   // where the cut-out sits on the collage
+        tag: [1170, 526], tilt: -3,          // paper name tag position + angle
+        dreams: 100,                                    // PLACEHOLDER until we load DreamBank
+        hit: "M1100,556L1100,575L1109,599L1109,627L1112,635L1103,643L1103,660L1121,661L1130,677L1132,689L1163,688L1165,650L1157,648L1156,628L1151,622L1140,618L1138,608L1186,609L1187,616L1173,630L1172,671L1189,671L1194,653L1232,657L1232,640L1229,636L1218,635L1232,630L1238,620L1238,602L1218,603L1230,576L1230,558L1211,558L1204,571L1184,572L1182,586L1152,588L1151,572L1145,571L1139,565L1123,565L1118,555Z"
+      }
+    ];
+
+
+    // ---------- 4. DRAW EACH WORLD ----------
+    const groups = svg.selectAll(".world")
+      .data(worlds)
+      .enter()
+      .append("g")
+      .attr("class", "world");
+
+    groups.append("path")                     // invisible area that catches the mouse
+      .attr("d", d => d.hit)
+      .attr("fill", "rgba(0,0,0,0)");
+
+    groups.append("image")                    // the paper cut-out
+      .attr("class", "cutout")
+      .attr("href", d => d.image)
+      .attr("x", d => d.x).attr("y", d => d.y)
+      .attr("width", d => d.w).attr("height", d => d.h)
+      .attr("filter", "url(#paper)")
+      .style("pointer-events", "none");
+
+    const tags = groups.append("g")           // paper name tag
+      .attr("class", "tag")
+      .attr("transform", d => `translate(${d.tag[0]}, ${d.tag[1]}) rotate(${d.tilt})`)
+      .style("pointer-events", "none");
+    tags.append("rect")
+      .attr("x", d => -(d.name.length * 9 + 18)).attr("y", -20)
+      .attr("width", d => d.name.length * 18 + 36).attr("height", 36)
+      .attr("fill", "#f4eedc")
+      .attr("filter", "url(#paper)");
+    tags.append("text")
+      .attr("text-anchor", "middle").attr("dy", 6)
+      .attr("font-family", "'Courier New', monospace").attr("font-size", 22)
+      .attr("fill", "#2a2350")
+      .text(d => d.name);
+
+    // a layer on top for the stars of whichever world is open
+    const starLayer = svg.append("g");
+
+
+    // ---------- 5. ZOOM IN / OUT ----------
+    // Animates the SVG's viewBox: a smaller viewBox = zoomed in.
+    function zoomTo(view) {
+      svg.transition().duration(900).ease(d3.easeCubicInOut)
+        .attrTween("viewBox", () => {
+          const from = svg.attr("viewBox").split(" ").map(Number);
+          const i = d3.interpolate(from, view);
+          return t => i(t).join(" ");
+        });
+    }
+
+    // a view around a world, padded, with the same shape as the collage (1.6 : 1)
+    function viewAround(d) {
+      const pad = 70;
+      let w = d.w + pad * 2;
+      let h = d.h + pad * 2;
+      if (w / h < W / H) w = h * (W / H); else h = w / (W / H);
+      const cx = d.x + d.w / 2;
+      const cy = d.y + d.h / 2;
+      let x = Math.max(0, Math.min(W - w, cx - w / 2));
+      let y = Math.max(0, Math.min(H - h, cy - h / 2));
+      return [x, y, w, h];
+    }
+
+    function openWorld(event, d) {
+      if (svg.classed("zoomed")) return;
+      svg.classed("zoomed", true);
+      groups.classed("active", g => g === d);
+      veil.transition().duration(900).attr("opacity", 0.65);
+      zoomTo(viewAround(d));
+      d3.select("#back").style("display", "block");
+      drawStars(d);
+    }
+
+    function closeWorld() {
+      svg.classed("zoomed", false);
+      groups.classed("active", false);
+      veil.transition().duration(900).attr("opacity", 0);
+      zoomTo(fullView);
+      d3.select("#back").style("display", "none");
+      d3.select("#note").style("display", "none");
+      starLayer.selectAll("*").remove();
+      d3.select("#message").text(restMessage);
+    }
+
+    d3.select("#back").on("click", closeWorld);
+
+
+    // ---------- 6. STARS = DREAMS ----------
+    // one star per dream in this world, placed on the world's star spots
+    function drawStars(world) {
+      const list = dreams.filter(dr => dr.world === world.name);
+      const spots = starSpots[world.name];
+
+      const total = worldTotals[world.name];
+      const share = (100 * total / totalDreams).toFixed(1);
+      d3.select("#message")
+        .text(`${world.name} · ${total.toLocaleString()} of ${totalDreams.toLocaleString()} dreams (${share}%) · each star ≈ ${dreamsPerStar} dreams`);
+
+      const stars = starLayer.selectAll(".star")
+        .data(list)
+        .enter()
+        .append("g")
+        .attr("class", "star")
+        .attr("transform", (dr, i) => `translate(${spots[i % spots.length][0]}, ${spots[i % spots.length][1]})`)
+        .attr("opacity", 0);
+
+      stars.append("circle")                  // soft glow
+        .attr("class", "glow")
+        .attr("r", 7)
+        .attr("fill", "#f2d14b")
+        .attr("opacity", 0.4)
+        .style("animation-delay", () => `${Math.random() * 2.4}s`);
+
+      stars.append("path")                    // four-point sparkle
+        .attr("class", "core")
+        .attr("d", "M0,-6 L1.4,-1.4 L6,0 L1.4,1.4 L0,6 L-1.4,1.4 L-6,0 L-1.4,-1.4 Z")
+        .attr("fill", "#fff6c8");
+
+      // stars appear one after another once the zoom has finished
+      stars.transition()
+        .delay((dr, i) => 900 + i * 60)
+        .duration(400)
+        .attr("opacity", 1);
+
+      // hover a star = its dream on a paper note
+      stars
+        .on("mouseover", function (event, dr) {
+          d3.select("#note")
+            .style("display", "block")
+            .html(`<div class="id">${dr.dreamer} · ${dr.gender} · ${dr.year}</div>${dr.text}`);
+        })
+        .on("mousemove", function (event) {
+          const [mx, my] = d3.pointer(event, document.getElementById("stage"));
+          d3.select("#note")
+            .style("left", (mx + 18) + "px")
+            .style("top", (my + 18) + "px");
+        })
+        .on("mouseout", () => d3.select("#note").style("display", "none"));
+    }
+
+
+    // ---------- 7. HOVER + CLICK ON WORLDS ----------
+    groups
+      .on("mouseover", (event, d) => {
+        if (!svg.classed("zoomed")) d3.select("#message").text(`The world of ${d.name}`);
+      })
+      .on("mouseout", () => {
+        if (!svg.classed("zoomed")) d3.select("#message").text(restMessage);
+      })
+      .on("click", openWorld);
+  </script>
+
+</body>
+</html>
