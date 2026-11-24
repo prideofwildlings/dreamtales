@@ -266,7 +266,9 @@
     const STAGGER = 0.15;       // each letter leaves a little after the one before
     const titleStart = performance.now();
 
-    setInterval(() => {
+    const DISSOLVE_AT = 8;      // seconds after the page opens when the first letter starts to dissolve
+    const DISSOLVE_FOR = 4;     // seconds each letter takes to fade away
+    const titleTimer = setInterval(() => {
       const t = (performance.now() - titleStart) / 1000;
       tiles.attr("transform", (d, i) => {
         let x, y, r, s = 1;
@@ -289,6 +291,20 @@
         }
         return `translate(${x.toFixed(1)}, ${y.toFixed(1)}) rotate(${r.toFixed(1)}) scale(${s.toFixed(3)})`;
       });
+
+      // 4. dissolve: after floating a while, each letter slowly blurs, drifts and fades away
+      tiles.each(function (d, i) {
+        const start = DISSOLVE_AT + i * 0.45;               // letters leave one by one
+        const f = Math.max(0, Math.min(1, (t - start) / DISSOLVE_FOR));
+        if (f <= 0) return;
+        d3.select(this)
+          .style("opacity", (1 - f).toFixed(3))
+          .style("filter", `blur(${(f * 4).toFixed(2)}px)`);
+      });
+      if (t > DISSOLVE_AT + 10 * 0.45 + DISSOLVE_FOR) {     // all gone: stop and clean up
+        clearInterval(titleTimer);
+        titleLayer.remove();
+      }
     }, 1000 / 8);
 
 
