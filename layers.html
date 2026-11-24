@@ -178,7 +178,7 @@
       .attr("preserveAspectRatio", "xMidYMid slice");   // fill the screen (edges may be trimmed)
 
     svg.append("image")
-      .attr("href", "layer-bg.jpg")
+      .attr("href", "layer-sky.jpg")
       .attr("width", W).attr("height", H);
 
 
@@ -554,8 +554,8 @@
     const eyeArt = pieces.filter(d => d.name === "eye").select(".art");
     // the eye's numbers below were measured on the eye picture at its old spot; this
     // moves them onto the eye where it now sits (at 236, 0, shrunk to 80%)
-    const eyeSpot = eyeArt.append("g").attr("transform", "translate(236, 0) scale(0.8) translate(-205, 0)");
-    const EYE_ON_COLLAGE = [354, 112];          // where the eye is on the collage (for staring at the cursor)
+    const eyeSpot = eyeArt.append("g").attr("transform", null);
+    const EYE_ON_COLLAGE = [353, 140];          // where the eye is on the collage (for staring at the cursor)
     const eyeBall = eyeSpot.append("g").attr("clip-path", "url(#eyeClip)").style("pointer-events", "none");
     eyeBall.append("path").attr("d", almond).attr("fill", "url(#eyeWhite)");
     const iris = eyeBall.append("image")
