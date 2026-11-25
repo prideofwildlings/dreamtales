@@ -576,6 +576,20 @@
 
 
 
+    // ---------- 12. THE DANCERS: a simple flip dance ----------
+    // Stop-motion: the dancers flip left / right on the beat, like a paper puppet turned over.
+    const dancers = pieces.filter(d => d.name === "friendship").select(".art image");
+    const dd = layers.find(d => d.name === "friendship");
+    const dcx = dd.x + dd.w / 2;                                   // flip around their centre
+    const beat = [1, 1, -1, -1, 1, -1, 1, 1];                      // a little rhythm, not a metronome
+    let danceStep = 0;
+    setInterval(() => {
+      const s = beat[danceStep++ % beat.length];
+      const tilt = s * 3;
+      dancers.attr("transform", `translate(${dcx},0) scale(${s},1) translate(${-dcx},0) rotate(${tilt},${dcx},${dd.y + dd.h / 2})`);
+    }, 420);
+
+
     // ---------- 10. THE EYE: a pasted pupil that follows you ----------
     // Dada / surreal: the cloud's eye stays as drawn, but its pupil is a small round
     // scrap cut from another source (an old engraving) and glued in. It slides inside
