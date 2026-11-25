@@ -855,7 +855,7 @@
       st[i] = skyStars[4 * i + 2];
       const rare = st[i] < 0 ? 0 : 1 - Math.log(themes[st[i]].count) / Math.log(maxCount);   // 0 common .. ~0.5 rare
       sr[i] = 0.45 + skyStars[4 * i + 3] * 0.1 + rare * 1.2;                // size: dream length + rarity
-      sa[i] = st[i] < 0 ? 0.35 : 0.5 + rare;                               // brightness: rare = brighter
+      sa[i] = st[i] < 0 ? 0.5 : 0.5 + rare;                               // brightness: rare = brighter
       sp[i] = Math.random() * Math.PI * 2;                                 // twinkle phase
       ss[i] = 0.6 + Math.random() * 2.2;                                   // twinkle speed
     }
