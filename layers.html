@@ -517,8 +517,19 @@
     boilMerge.append("feMergeNode").attr("in", "SourceGraphic");
 
     // paper colours
-    // the flame is a black-and-white ink drawing: cream paper, ink outlines, pen hatching
-    const PAL = { outer: "#f3ede0", inner: "#fffdf6", smoke: "#ece5d6", wisp: "#1b1714", ink: "#1b1714", hatch: true };
+    // COLLAGE FLAME: each flame shape is snipped out of another printed piece of the collage
+    //   outer flame = the red engraved planet, inner flame = the yellow rays of the star burst,
+    //   smoke = the grey engraved clouds of the eye piece. The paper edge comes from the "boil" filter.
+    function texPattern(id, href, w, x, y) {
+      const p = defs.append("pattern").attr("id", id).attr("patternUnits", "userSpaceOnUse")
+        .attr("width", 2000).attr("height", 2000).attr("x", -1000).attr("y", -1000);
+      p.append("image").attr("href", href).attr("width", w).attr("x", x + 1000).attr("y", y + 1000);
+    }
+    texPattern("texFire",  "layer-planets.png", 470, -22, -78);
+    texPattern("texCore",  "layer-star.png",    300, -138, -167);
+    texPattern("texSmoke", "layer-eye.png",     290, -95, -175);
+    const PAL = { outer: "url(#texFire)", inner: "url(#texCore)", smoke: "url(#texSmoke)",
+                  wisp: "#f4eedc", ink: "none", hatch: false };
     const ORANGE = PAL.outer, YELLOW = PAL.inner, SMOKE = PAL.smoke, WISP = PAL.wisp;
 
     // ink hatching (diagonal pen lines) for the sketch flame
@@ -557,35 +568,44 @@
       []
     ];
 
-    // the order frames are shown in (each number = one frame at 8 fps); the 7s at the end are a pause
-    const sequence = [0, 1, 2, 1, 2, 1, 3, 4, 5, 6, 6, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7];
+    // DREAM BREATH: instead of fire, the dragon breathes a soft painted cloud full of little stars.
+    // Each frame is a painted puff picture (puff-1/2/3.png) placed in front of the mouth.
+    // [picture, x, y, width, opacity] — x/y measured from the mouth, in collage pixels
+    const breath = [
+      [["puff-1.png", 6, -16, 30, 1]],
+      [["puff-1.png", 14, -26, 44, 1]],
+      [["puff-2.png", 22, -50, 86, 1]],
+      [["puff-2.png", 26, -56, 96, 1]],
+      [["puff-2.png", 30, -60, 100, 1]],
+      [["puff-3.png", 40, -70, 104, 0.95]],
+      [["puff-3.png", 52, -82, 106, 0.8]],
+      [["puff-3.png", 64, -94, 108, 0.6]],
+      [["puff-3.png", 76, -104, 110, 0.35]],
+      []
+    ];
+    const sequence = [0, 1, 2, 3, 4, 3, 4, 5, 6, 7, 8, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9];
 
     const dragonGroup = pieces.filter(d => d.name === "dragon");
     const flame = dragonGroup.select(".art").append("g")
-      .attr("transform", `translate(${mouth[0]}, ${mouth[1]}) rotate(10) scale(1.4)`)
-      .attr("filter", "url(#boil)")
+      .attr("filter", "url(#lift)")
       .style("pointer-events", "none");
+    // a few thin breath lines from the mouth to the cloud
+    const breathLines = flame.append("g").attr("fill", "none").attr("stroke", "#f4f1ea")
+      .attr("stroke-width", 1.1).attr("stroke-linecap", "round").attr("opacity", 0.85);
+    const puffImg = flame.append("image");
 
-    function drawFrame(shapes) {
-      flame.selectAll("*").remove();
-      shapes.forEach(s => {
-        const outerShape = s.fill === ORANGE || s.fill === SMOKE;
-        let el = null;
-        if (s.d) el = flame.append("path").attr("d", s.d);
-        if (s.ellipse) el = flame.append("ellipse")
-          .attr("cx", s.ellipse[0]).attr("cy", s.ellipse[1])
-          .attr("rx", s.ellipse[2]).attr("ry", s.ellipse[3]);
-        if (el) {
-          el.attr("fill", s.fill).attr("stroke", PAL.ink).attr("stroke-width", 0.8).attr("stroke-linejoin", "round");
-          if (PAL.hatch && outerShape) {                       // shade the outer flame and smoke with pen lines
-            const copy = el.clone().attr("fill", "url(#hatch)").attr("stroke", "none").attr("opacity", 0.55);
-            flame.node().appendChild(copy.node());
-          }
-        }
-        if (s.wisp) flame.append("path").attr("d", s.wisp)
-          .attr("fill", "none").attr("stroke", WISP).attr("stroke-width", 2.5)
-          .attr("stroke-linecap", "round");
-      });
+    function drawFrame(k) {
+      const parts = breath[k];
+      if (!parts.length) { puffImg.attr("href", null); breathLines.selectAll("*").remove(); return; }
+      const [src, x, y, w, op] = parts[0];
+      puffImg.attr("href", src).attr("x", x).attr("y", y).attr("width", w).attr("opacity", op);
+      breathLines.selectAll("*").remove();
+      if (k >= 1 && k <= 4) {                               // the breath connecting mouth and puff
+        [[-3, 0], [0, 4], [3, -4]].forEach(([dy, bend]) => {
+          breathLines.append("path")
+            .attr("d", `M2,${dy} Q${(x + 6) / 2},${dy + y / 3 + bend} ${x + 6},${y + w * 0.45 + dy}`);
+        });
+      }
     }
 
     // the dragon jerks its head: pulls back on the spark, thrusts forward with the fire
@@ -593,13 +613,13 @@
     const pivot = [dragonD.x + dragonD.w * 0.42, dragonD.y + dragonD.h * 0.55];
     const dragonImg = dragonGroup.select(".art image");
     const jerk = [-3, 4, 3, 4, 3, 2, 1, 0];                      // degrees, for the first frames of each breath
-    const flameBase = `translate(${mouth[0]}, ${mouth[1]}) rotate(10) scale(1.4)`;
+    const flameBase = `translate(${mouth[0]}, ${mouth[1]})`;
     let step = 0;
     setInterval(() => {
       const a = step < jerk.length ? jerk[step] : 0;
       dragonImg.attr("transform", a ? `rotate(${a}, ${pivot[0]}, ${pivot[1]})` : null);
       flame.attr("transform", `rotate(${a}, ${pivot[0]}, ${pivot[1]}) ${flameBase}`);
-      drawFrame(frames[sequence[step]]);
+      drawFrame(sequence[step]);
       boilNoise.attr("seed", Math.floor(Math.random() * 1000));   // re-cut the paper edge
       step = (step + 1) % sequence.length;
     }, 1000 / FPS);
