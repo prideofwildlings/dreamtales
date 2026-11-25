@@ -859,11 +859,19 @@
       sp[i] = Math.random() * Math.PI * 2;                                 // twinkle phase
       ss[i] = 0.6 + Math.random() * 2.2;                                   // twinkle speed
     }
+    const brightStars = d3.range(N).filter(i => sa[i] >= 0.8);   // the only ones that get a glow
     const tree = d3.quadtree().x(i => sx[i]).y(i => sy[i]).addAll(d3.range(N));
 
     // the old sky photo, blurred and dimmed, only as a soft nebula glow behind the stars
-    const nebula = new Image();
-    nebula.src = "layer-sky.jpg";
+    const nebulaImg = new Image();
+    const nebula = document.createElement("canvas");      // blurred once, then reused every frame
+    nebula.width = W; nebula.height = H; nebula.complete = false;
+    nebulaImg.onload = () => {
+      const c = nebula.getContext("2d");
+      c.filter = "blur(14px)"; c.drawImage(nebulaImg, 0, 0, W, H);
+      nebula.complete = true; nebula.naturalWidth = W;
+    };
+    nebulaImg.src = "layer-sky.jpg";
 
     // a soft glow sprite for the bright stars
     const glow = document.createElement("canvas");
@@ -899,7 +907,7 @@
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       // soft shadow under the lens
       ctx.beginPath(); ctx.arc(cx + 5, cy + 8, LENS_R + 6, 0, Math.PI * 2);
-      ctx.fillStyle = "rgba(0,0,0,0.45)"; ctx.filter = "blur(8px)"; ctx.fill(); ctx.filter = "none";
+      ctx.fillStyle = "rgba(0,0,0,0.35)"; ctx.fill();
       // clip to the circle
       ctx.beginPath(); ctx.arc(cx, cy, LENS_R, 0, Math.PI * 2); ctx.clip();
       ctx.fillStyle = "#0a0716"; ctx.fillRect(cx - LENS_R, cy - LENS_R, LENS_R * 2, LENS_R * 2);
@@ -908,9 +916,7 @@
       const e = cx + MAG * (m.e - box.left - cx), f = cy + MAG * (m.f - box.top - cy);
       ctx.setTransform(dpr * a, 0, 0, dpr * d, dpr * e, dpr * f);
       if (nebula.complete && nebula.naturalWidth) {
-        ctx.globalAlpha = 0.3; ctx.filter = "blur(10px)";
-        ctx.drawImage(nebula, 0, 0, W, H);
-        ctx.filter = "none"; ctx.globalAlpha = 1;
+        ctx.globalAlpha = 0.3; ctx.drawImage(nebula, 0, 0, W, H); ctx.globalAlpha = 1;
       }
       // the stars under the lens, as sparkles
       const [qx, qy] = [(cx - (m.e - box.left)) / m.a, (cy - (m.f - box.top)) / m.d];   // lens centre on the collage
@@ -950,7 +956,10 @@
       ctx.restore();
     }
 
+    let lastFrame = 0;
     function drawSky(now) {
+      if (now - lastFrame < 33) { requestAnimationFrame(drawSky); return; }   // ~30 frames per second is plenty
+      lastFrame = now;
       const dpr = window.devicePixelRatio || 1;
       const box = canvas.getBoundingClientRect();
       if (canvas.width !== Math.round(box.width * dpr) || canvas.height !== Math.round(box.height * dpr)) {
@@ -966,9 +975,7 @@
 
       if (nebula.complete && nebula.naturalWidth) {
         ctx.globalAlpha = 0.45;
-        ctx.filter = "blur(14px)";
         ctx.drawImage(nebula, 0, 0, W, H);
-        ctx.filter = "none";
         ctx.globalAlpha = 1;
       }
 
@@ -989,10 +996,6 @@
 
       // the focused constellation: lines + bright sparkles
       if (focusK >= 0) {
-        ctx.strokeStyle = "rgba(246, 231, 166, 0.55)"; ctx.lineWidth = 0.5;
-        ctx.beginPath();
-        focusLines.forEach(([a, b]) => { ctx.moveTo(sx[a], sy[a]); ctx.lineTo(sx[b], sy[b]); });
-        ctx.stroke();
         const sp2 = new Path2D();
         for (let i = 0; i < N; i++) {
           if (st[i] !== focusK) continue;
@@ -1004,9 +1007,9 @@
 
       // glow on the rare (brighter) stars + the hovered one
       ctx.globalCompositeOperation = "lighter";
-      for (let i = 0; i < N; i++) {
+      const glowList = hovered >= 0 ? brightStars.concat([hovered]) : brightStars;
+      for (const i of glowList) {
         if (focusK >= 0 && st[i] !== focusK && i !== hovered) continue;
-        if (sa[i] < 0.8 && i !== hovered && st[i] !== focusK) continue;
         const k = i === hovered ? 22 : sr[i] * 5;
         ctx.globalAlpha = i === hovered ? 1 : 0.35 + 0.3 * Math.sin(t * ss[i] + sp[i]);
         ctx.drawImage(glow, sx[i] - k / 2, sy[i] - k / 2, k, k);
