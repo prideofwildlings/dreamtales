@@ -35,7 +35,7 @@
                       font-family: "IM Fell English SC", Georgia, serif; font-size: 18px; color: #2b1d0e; }
     /* small caption floating at the top of the collage (only when there is something to say) */
     #message {
-      position: absolute; top: 2.5%; left: 50%; transform: translateX(-50%);
+      position: absolute; bottom: 12%; left: 50%; transform: translateX(-50%);
       margin: 0; font-style: italic; font-size: 17px; color: #f4eedc;
       text-shadow: 0 1px 4px #000, 0 0 10px #000;
       pointer-events: none; white-space: nowrap;
@@ -64,7 +64,8 @@
     .piece.plain:hover .art image, .piece.plain.active .art image { filter: url(#paper); }
     .piece .tag { opacity: 0; transition: opacity 0.2s; }
     .piece:hover .tag, .piece.active .tag { opacity: 1; }
-    .zoomed .piece:not(.active) { pointer-events: none; }
+    .zoomed .piece:not(.active) { pointer-events: none; opacity: 0.18; }
+    .piece { transition: opacity 0.6s; }
     .zoomed .piece.active { cursor: default; }
 
     .star { cursor: pointer; }
@@ -313,6 +314,17 @@
 
 
     // ---------- 4. THE LAYERS (from layers-data.js, bottom to top) ----------
+    // pieces that open a constellation of the star sky (the others only lift on hover)
+    const pieceTheme = { dragon: "dragons", moon: "moon", castle: "castle", star: "sky",
+                         couple: "love", friendship: "dance" };
+    layers.forEach(d => {
+      const id = pieceTheme[d.name];
+      if (!id) { delete d.world; return; }
+      const t = dreamThemes.themes.find(t => t.id === id);
+      d.world = t.label; d.themeId = id;
+      if (!d.tag) { d.tag = [d.x + d.w / 2, Math.min(d.y + d.h - 8, 860)]; d.tilt = (Math.random() - 0.5) * 6; }
+    });
+
     const pieces = svg.selectAll(".piece")
       .data(layers)
       .enter()
@@ -390,13 +402,11 @@
       openNext = this.nextSibling;
       focusLayer.node().appendChild(this);          // lift it above the veil
       d3.select(this).classed("active", true);
-      veil.transition().duration(900).attr("opacity", 0.65);
-      zoomTo(viewAround(d));
+      zoomTo(focusOn(d));                          // light up its stars, return the view around them
       d3.select("#back").style("display", "block");
       d3.select("#dreambar").classed("hidebar", true);
       d3.select("#pageWrap").style("display", "none");
       mineLayer.style("display", "none");
-      drawStars(d);
     }
 
     function closeWorld() {
@@ -404,7 +414,7 @@
       d3.select(openNode).classed("active", false);
       openNode.parentNode.removeChild(openNode);
       svg.node().insertBefore(openNode, openNext);  // put it back in its layer
-      veil.transition().duration(900).attr("opacity", 0);
+      unfocus();
       zoomTo(fullView);
       d3.select("#back").style("display", "none");
       d3.select("#dreambar").classed("hidebar", false);
@@ -734,8 +744,11 @@
       const piece = pieceName ? pieces.filter(d => d.name === pieceName) : null;
       const pd = piece && !piece.empty() ? piece.datum() : null;
       let x, y, world = pd && pd.world ? pd.world : null;
-      if (world) {                                        // a piece that opens a world: use its star spots
-        [x, y] = layerSpots[world][Math.floor(Math.random() * layerSpots[world].length)];
+      const tk = theme ? themes.indexOf(theme) : -1;
+      const same = tk >= 0 ? d3.range(N).filter(i => st[i] === tk) : [];
+      if (same.length) {                                  // next to a star of its constellation
+        const j = same[Math.floor(Math.random() * same.length)];
+        x = sx[j] + (Math.random() - 0.5) * 14; y = sy[j] + (Math.random() - 0.5) * 14;
       } else if (pd) {                                    // another piece: land around it
         x = pd.x + pd.w * (0.2 + Math.random() * 0.6);
         y = pd.y + pd.h * (0.2 + Math.random() * 0.6);
@@ -963,7 +976,8 @@
       const t = now / 1000;
       const paths = Array.from({ length: LEVELS }, () => new Path2D());
       for (let i = 0; i < N; i++) {
-        const a = sa[i] * (0.55 + 0.45 * Math.sin(t * ss[i] + sp[i]));
+        if (focusK >= 0 && st[i] === focusK) continue;          // drawn as sparkles below
+        const a = sa[i] * (0.55 + 0.45 * Math.sin(t * ss[i] + sp[i])) * (focusK >= 0 ? 0.15 : 1);
         const lvl = Math.max(0, Math.min(LEVELS - 1, Math.floor(a * LEVELS)));
         const r = sr[i];
         paths[lvl].rect(sx[i] - r / 2, sy[i] - r / 2, r, r);
@@ -973,10 +987,26 @@
         ctx.fill(paths[l]);
       }
 
+      // the focused constellation: lines + bright sparkles
+      if (focusK >= 0) {
+        ctx.strokeStyle = "rgba(246, 231, 166, 0.55)"; ctx.lineWidth = 0.5;
+        ctx.beginPath();
+        focusLines.forEach(([a, b]) => { ctx.moveTo(sx[a], sy[a]); ctx.lineTo(sx[b], sy[b]); });
+        ctx.stroke();
+        const sp2 = new Path2D();
+        for (let i = 0; i < N; i++) {
+          if (st[i] !== focusK) continue;
+          const k = (1.5 + sr[i] * 0.7) * (0.8 + 0.2 * Math.sin(t * ss[i] + sp[i])) * (i === hovered ? 2.2 : 1);
+          sparkle(sp2, sx[i], sy[i], k);
+        }
+        ctx.fillStyle = "#fff3c4"; ctx.fill(sp2);
+      }
+
       // glow on the rare (brighter) stars + the hovered one
       ctx.globalCompositeOperation = "lighter";
       for (let i = 0; i < N; i++) {
-        if (sa[i] < 0.8 && i !== hovered) continue;
+        if (focusK >= 0 && st[i] !== focusK && i !== hovered) continue;
+        if (sa[i] < 0.8 && i !== hovered && st[i] !== focusK) continue;
         const k = i === hovered ? 22 : sr[i] * 5;
         ctx.globalAlpha = i === hovered ? 1 : 0.35 + 0.3 * Math.sin(t * ss[i] + sp[i]);
         ctx.drawImage(glow, sx[i] - k / 2, sy[i] - k / 2, k, k);
@@ -987,6 +1017,38 @@
       requestAnimationFrame(drawSky);
     }
     requestAnimationFrame(drawSky);
+
+    // ---- focus on one constellation (when its piece is clicked) ----
+    let focusK = -1, focusTree = null, focusLines = [];
+    function focusOn(piece) {
+      focusK = themes.findIndex(t => t.id === piece.themeId);
+      const idx = d3.range(N).filter(i => st[i] === focusK);
+      focusTree = d3.quadtree().x(i => sx[i]).y(i => sy[i]).addAll(idx);
+      // constellation lines: join the ~14 biggest stars with the shortest links (a spanning tree)
+      const pick = idx.slice().sort((a, b) => sr[b] - sr[a]).slice(0, 14);
+      const inTree = [pick[0]], rest = pick.slice(1);
+      focusLines = [];
+      while (rest.length) {
+        let best = null;
+        inTree.forEach(a => rest.forEach((b, j) => {
+          const dd = (sx[a] - sx[b]) ** 2 + (sy[a] - sy[b]) ** 2;
+          if (!best || dd < best[0]) best = [dd, a, b, j];
+        }));
+        focusLines.push([best[1], best[2]]); inTree.push(best[2]); rest.splice(best[3], 1);
+      }
+      const n = idx.length;
+      d3.select("#message").text(`${themes[focusK].label} · ${n.toLocaleString()} of ${N.toLocaleString()} dreams (${(100 * n / N).toFixed(1)}%) · each star is one dream`);
+      // the view: around the piece and all its stars, same shape as the collage
+      const xs = idx.map(i => sx[i]).concat([piece.x, piece.x + piece.w]);
+      const ys = idx.map(i => sy[i]).concat([piece.y, piece.y + piece.h]);
+      let x0 = d3.min(xs) - 40, x1 = d3.max(xs) + 40, y0 = d3.min(ys) - 60, y1 = d3.max(ys) + 60;
+      let w = x1 - x0, hh = y1 - y0;
+      if (w / hh < W / H) w = hh * W / H; else hh = w * H / W;
+      const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+      w = Math.min(w, W); hh = Math.min(hh, H);
+      return [Math.max(0, Math.min(W - w, cx - w / 2)), Math.max(0, Math.min(H - hh, cy - hh / 2)), w, hh];
+    }
+    function unfocus() { focusK = -1; focusTree = null; focusLines = []; hovered = -1; }
 
     // dream texts are loaded in files of 500, only when needed
     const chunks = new Map();
@@ -1000,6 +1062,28 @@
     // hover: find the nearest star (quadtree), show the start of its dream
     svg.on("mousemove.sky", function (event) {
       const overPiece = event.target.closest && event.target.closest(".piece");
+      if (svg.classed("zoomed") && focusTree) {               // inside a constellation
+        lens = null;
+        const [zx, zy] = d3.pointer(event, svg.node());
+        const zm = svg.node().getScreenCTM();
+        const zf = focusTree.find(zx, zy, 12 / zm.a);
+        const zi = zf === undefined ? -1 : zf;
+        const [px, py] = d3.pointer(event, document.getElementById("stage"));
+        svg.style("cursor", zi >= 0 ? "pointer" : null);
+        if (zi === hovered) {
+          if (zi >= 0) d3.select("#note").style("left", (px + 18) + "px").style("top", (py + 18) + "px");
+          return;
+        }
+        hovered = zi;
+        if (zi < 0) { d3.select("#note").style("display", "none"); return; }
+        d3.select("#note").style("display", "block").style("left", (px + 18) + "px").style("top", (py + 18) + "px")
+          .html(`<div class="id">${themeName(zi)}</div>…`);
+        getDream(zi).then(d => {
+          if (hovered !== zi) return;
+          d3.select("#note").html(`<div class="id">${themeName(zi)} · ${escapeHTML(d[1])}</div>${escapeHTML(shorten(d[0], 180))}`);
+        });
+        return;
+      }
       if (svg.classed("zoomed") || overPiece) {
         lens = null; svg.style("cursor", null);
         if (hovered >= 0) { hovered = -1; d3.select("#note").style("display", "none"); }
@@ -1033,7 +1117,7 @@
 
     // click: the whole dream on a torn book page
     svg.on("click.sky", function (event) {
-      if (hovered < 0 || svg.classed("zoomed")) return;
+      if (hovered < 0) return;
       const i = hovered;
       getDream(i).then(d => {
         const title = st[i] < 0 ? "An everyday dream" : `A dream of ${themes[st[i]].label}`;
@@ -1049,7 +1133,7 @@
     // ---------- 7. HOVER + CLICK ----------
     worldPieces
       .on("mouseover", (event, d) => {
-        if (!svg.classed("zoomed")) d3.select("#message").text(`The world of ${d.world}`);
+        if (!svg.classed("zoomed")) d3.select("#message").text(`Dreams of ${d.world} · click to open`);
       })
       .on("mouseout", () => {
         if (!svg.classed("zoomed")) d3.select("#message").text(restMessage);
