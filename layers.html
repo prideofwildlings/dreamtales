@@ -866,6 +866,77 @@
     let hovered = -1;
     const LEVELS = 8;
 
+    // the magnifying lens (from the NAVIGATION sketch): a round paper-rimmed lens follows
+    // the cursor over the open sky and enlarges the tiny dream stars under it
+    const LENS_R = 95;          // lens radius, in screen pixels
+    const MAG = 3.5;            // how much it magnifies
+    let lens = null;            // [x, y] of the lens on screen, or null when hidden
+
+    function sparkle(c, x, y, k) {           // a four-point star, like your sketch
+      c.moveTo(x, y - k);
+      c.lineTo(x + k * 0.25, y - k * 0.25); c.lineTo(x + k, y);
+      c.lineTo(x + k * 0.25, y + k * 0.25); c.lineTo(x, y + k);
+      c.lineTo(x - k * 0.25, y + k * 0.25); c.lineTo(x - k, y);
+      c.lineTo(x - k * 0.25, y - k * 0.25); c.closePath();
+    }
+
+    function drawLens(m, box, dpr, t) {
+      const [cx, cy] = lens;
+      ctx.save();
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      // soft shadow under the lens
+      ctx.beginPath(); ctx.arc(cx + 5, cy + 8, LENS_R + 6, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(0,0,0,0.45)"; ctx.filter = "blur(8px)"; ctx.fill(); ctx.filter = "none";
+      // clip to the circle
+      ctx.beginPath(); ctx.arc(cx, cy, LENS_R, 0, Math.PI * 2); ctx.clip();
+      ctx.fillStyle = "#0a0716"; ctx.fillRect(cx - LENS_R, cy - LENS_R, LENS_R * 2, LENS_R * 2);
+      // magnified view: screen = lens centre + MAG * (normal position - lens centre)
+      const a = m.a * MAG, d = m.d * MAG;
+      const e = cx + MAG * (m.e - box.left - cx), f = cy + MAG * (m.f - box.top - cy);
+      ctx.setTransform(dpr * a, 0, 0, dpr * d, dpr * e, dpr * f);
+      if (nebula.complete && nebula.naturalWidth) {
+        ctx.globalAlpha = 0.3; ctx.filter = "blur(10px)";
+        ctx.drawImage(nebula, 0, 0, W, H);
+        ctx.filter = "none"; ctx.globalAlpha = 1;
+      }
+      // the stars under the lens, as sparkles
+      const [qx, qy] = [(cx - (m.e - box.left)) / m.a, (cy - (m.f - box.top)) / m.d];   // lens centre on the collage
+      const reach = LENS_R / a + 2;
+      const path = new Path2D(), bright = new Path2D();
+      tree.visit((node, x0, y0, x1, y1) => {
+        if (!node.length) {
+          do {
+            const i = node.data;
+            if ((sx[i] - qx) ** 2 + (sy[i] - qy) ** 2 < reach * reach) {
+              const tw = 0.6 + 0.4 * Math.sin(t * ss[i] + sp[i]);
+              const k = (0.5 + sr[i] * 0.55) * (0.8 + 0.2 * tw);
+              sparkle(sa[i] > 0.8 || i === hovered ? bright : path, sx[i], sy[i], i === hovered ? k * 2.2 : k);
+            }
+          } while ((node = node.next));
+        }
+        return x0 > qx + reach || x1 < qx - reach || y0 > qy + reach || y1 < qy - reach;
+      });
+      ctx.fillStyle = "rgba(255, 246, 220, 0.85)"; ctx.fill(path);
+      ctx.fillStyle = "#fff3c4"; ctx.fill(bright);
+      if (hovered >= 0) {
+        ctx.globalCompositeOperation = "lighter";
+        ctx.drawImage(glow, sx[hovered] - 9, sy[hovered] - 9, 18, 18);
+        ctx.globalCompositeOperation = "source-over";
+      }
+      ctx.restore();
+      // cream paper rim, like the cut-out pieces
+      ctx.save();
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.beginPath(); ctx.arc(cx, cy, LENS_R + 3, 0, Math.PI * 2);
+      ctx.lineWidth = 7; ctx.strokeStyle = "#f4eedc"; ctx.stroke();
+      ctx.beginPath(); ctx.arc(cx, cy, LENS_R - 1, 0, Math.PI * 2);
+      ctx.lineWidth = 1; ctx.strokeStyle = "rgba(90, 64, 30, 0.6)"; ctx.stroke();
+      // a faint glassy shine
+      ctx.beginPath(); ctx.arc(cx, cy, LENS_R - 12, Math.PI * 1.1, Math.PI * 1.45);
+      ctx.lineWidth = 4; ctx.strokeStyle = "rgba(255,255,255,0.18)"; ctx.stroke();
+      ctx.restore();
+    }
+
     function drawSky(now) {
       const dpr = window.devicePixelRatio || 1;
       const box = canvas.getBoundingClientRect();
@@ -912,6 +983,7 @@
       }
       ctx.globalAlpha = 1;
       ctx.globalCompositeOperation = "source-over";
+      if (lens) drawLens(m, box, dpr, t);
       requestAnimationFrame(drawSky);
     }
     requestAnimationFrame(drawSky);
@@ -929,33 +1001,35 @@
     svg.on("mousemove.sky", function (event) {
       const overPiece = event.target.closest && event.target.closest(".piece");
       if (svg.classed("zoomed") || overPiece) {
-        if (hovered >= 0) { hovered = -1; d3.select("#note").style("display", "none"); svg.style("cursor", null); }
+        lens = null; svg.style("cursor", null);
+        if (hovered >= 0) { hovered = -1; d3.select("#note").style("display", "none"); }
         return;
       }
+      lens = d3.pointer(event, canvas);
+      svg.style("cursor", "none");                       // the lens replaces the cursor
       const [mx, my] = d3.pointer(event, svg.node());
       const m = svg.node().getScreenCTM();
-      const found = tree.find(mx, my, 7 / m.a);          // within ~7 screen pixels
+      const found = tree.find(mx, my, 9 / (m.a * MAG));  // the star under the centre of the lens
       const i = found === undefined ? -1 : found;
       if (i === hovered) {
         if (i >= 0) {
           const [px, py] = d3.pointer(event, document.getElementById("stage"));
-          d3.select("#note").style("left", (px + 18) + "px").style("top", (py + 18) + "px");
+          d3.select("#note").style("left", (px + LENS_R + 16) + "px").style("top", (py - 40) + "px");
         }
         return;
       }
       hovered = i;
-      svg.style("cursor", i >= 0 ? "pointer" : null);
       if (i < 0) { d3.select("#note").style("display", "none"); return; }
       const [px, py] = d3.pointer(event, document.getElementById("stage"));
       d3.select("#note").style("display", "block")
-        .style("left", (px + 18) + "px").style("top", (py + 18) + "px")
+        .style("left", (px + LENS_R + 16) + "px").style("top", (py - 40) + "px")
         .html(`<div class="id">${themeName(i)}</div>…`);
       getDream(i).then(d => {
         if (hovered !== i) return;
         d3.select("#note").html(`<div class="id">${themeName(i)} · ${escapeHTML(d[1])}</div>${escapeHTML(shorten(d[0], 180))}`);
       });
     });
-    svg.on("mouseleave.sky", () => { hovered = -1; d3.select("#note").style("display", "none"); });
+    svg.on("mouseleave.sky", () => { lens = null; hovered = -1; d3.select("#note").style("display", "none"); });
 
     // click: the whole dream on a torn book page
     svg.on("click.sky", function (event) {
