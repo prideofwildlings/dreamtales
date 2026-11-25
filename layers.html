@@ -568,22 +568,13 @@
       []
     ];
 
-    // DREAM BREATH: instead of fire, the dragon breathes a soft painted cloud full of little stars.
-    // Each frame is a painted puff picture (puff-1/2/3.png) placed in front of the mouth.
-    // [picture, x, y, width, opacity] — x/y measured from the mouth, in collage pixels
-    const breath = [
-      [["puff-1.png", 6, -16, 30, 1]],
-      [["puff-1.png", 14, -26, 44, 1]],
-      [["puff-2.png", 22, -50, 86, 1]],
-      [["puff-2.png", 26, -56, 96, 1]],
-      [["puff-2.png", 30, -60, 100, 1]],
-      [["puff-3.png", 40, -70, 104, 0.95]],
-      [["puff-3.png", 52, -82, 106, 0.8]],
-      [["puff-3.png", 64, -94, 108, 0.6]],
-      [["puff-3.png", 76, -104, 110, 0.35]],
-      []
-    ];
-    const sequence = [0, 1, 2, 3, 4, 3, 4, 5, 6, 7, 8, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9];
+    // SMOKE BREATH: thin wisps curl out of the dragon's nostrils and billow up into a
+    // warm watercolour cloud with an ink outline (painted frames smoke-1..5.png).
+    // [picture, x, y, width, opacity] — x/y from the mouth, in collage pixels
+    const SW = 105, SH = SW * 160 / 110;                    // frame size; the nostril sits near the bottom-left
+    const at = [-SW * 0.07, -SH * 0.94];
+    const breath = [1, 2, 3, 4, 5].map(n => [[`smoke-${n}.png`, at[0], at[1], SW, 1]]).concat([[]]);
+    const sequence = [0, 1, 2, 3, 3, 4, 4, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5];
 
     const dragonGroup = pieces.filter(d => d.name === "dragon");
     const flame = dragonGroup.select(".art").append("g")
@@ -598,14 +589,9 @@
       const parts = breath[k];
       if (!parts.length) { puffImg.attr("href", null); breathLines.selectAll("*").remove(); return; }
       const [src, x, y, w, op] = parts[0];
-      puffImg.attr("href", src).attr("x", x).attr("y", y).attr("width", w).attr("opacity", op);
+      puffImg.attr("href", src).attr("x", x).attr("y", y).attr("width", w).attr("opacity", op)
+        .attr("transform", "rotate(62)");                    // smoke leans forward, out over the dark sky
       breathLines.selectAll("*").remove();
-      if (k >= 1 && k <= 4) {                               // the breath connecting mouth and puff
-        [[-3, 0], [0, 4], [3, -4]].forEach(([dy, bend]) => {
-          breathLines.append("path")
-            .attr("d", `M2,${dy} Q${(x + 6) / 2},${dy + y / 3 + bend} ${x + 6},${y + w * 0.45 + dy}`);
-        });
-      }
     }
 
     // the dragon jerks its head: pulls back on the spark, thrusts forward with the fire
