@@ -41,6 +41,13 @@
       pointer-events: none; white-space: nowrap;
     }
 
+    /* sound toggle: a small paper tag in the corner */
+    #sound {
+      position: absolute; top: 18px; right: 18px; z-index: 5;
+      font-family: "Courier New", monospace; font-size: 14px;
+      background: #f4eedc; color: #2a2350; border: none; padding: 7px 12px; cursor: pointer;
+      transform: rotate(2deg); box-shadow: 3px 5px 9px rgba(0,0,0,0.45);
+    }
     #back {
       position: absolute; top: 18px; left: 18px;
       display: none;
@@ -163,6 +170,7 @@
 
   <div id="stage">
     <canvas id="starsky"></canvas>
+    <button id="sound" type="button">&#9835; sound off</button>
     <button id="back">&larr; back to the collage</button>
     <div id="note"></div>
     <p id="message"></p>
@@ -638,6 +646,106 @@
       const j = shake ? (shake === 2 ? 3 : 1.5) : 0;
       coupleImg.attr("transform", j ? `translate(${(Math.random() - .5) * j},${(Math.random() - .5) * j}) rotate(${(Math.random() - .5) * j}, ${CHEST[0]}, ${CHEST[1]})` : null);
     }, 1000 / 12);
+
+
+    // ---------- 14. AMBIENT SOUND (made in the browser, no music file) ----------
+    // A slow dreamy pad + night air + now and then a music-box note.
+    // Hovering a dream star plays a small chime (rarer dreams ring higher).
+    // Browsers only allow sound after a click, so it starts from the "sound" tag.
+    let audio = null;
+    const SCALE = [0, 2, 4, 6, 7, 9, 11];              // a dreamy (Lydian) scale
+    const ROOT = 48;                                    // C3
+    const hz = m => 440 * Math.pow(2, (m - 69) / 12);
+
+    function startAudio() {
+      const ac = new (window.AudioContext || window.webkitAudioContext)();
+      const master = ac.createGain(); master.gain.value = 0; master.connect(ac.destination);
+      // soft echo, like a big quiet room
+      const delay = ac.createDelay(2); delay.delayTime.value = 0.42;
+      const fb = ac.createGain(); fb.gain.value = 0.38;
+      const wet = ac.createGain(); wet.gain.value = 0.35;
+      delay.connect(fb); fb.connect(delay); delay.connect(wet); wet.connect(master);
+      const bus = ac.createGain(); bus.connect(master); bus.connect(delay);
+
+      // the pad: three slow notes, each two detuned voices through a soft filter
+      const padFilter = ac.createBiquadFilter(); padFilter.type = "lowpass"; padFilter.frequency.value = 700;
+      padFilter.connect(bus);
+      const lfo = ac.createOscillator(); lfo.frequency.value = 0.05;
+      const lfoAmt = ac.createGain(); lfoAmt.gain.value = 350;
+      lfo.connect(lfoAmt); lfoAmt.connect(padFilter.frequency); lfo.start();
+      const voices = [0, 1, 2].map(() => {
+        const g = ac.createGain(); g.gain.value = 0; g.connect(padFilter);
+        const o1 = ac.createOscillator(), o2 = ac.createOscillator();
+        o1.type = "triangle"; o2.type = "sine"; o2.detune.value = 7;
+        o1.connect(g); o2.connect(g); o1.start(); o2.start();
+        return { g, o1, o2 };
+      });
+      const chords = [[0, 4, 9], [2, 6, 11], [-3, 4, 7], [0, 6, 9]];    // drifting chords
+      let ci = 0;
+      function nextChord() {
+        const t = ac.currentTime;
+        chords[ci++ % chords.length].forEach((n, k) => {
+          const v = voices[k], f = hz(ROOT + 12 + n);
+          v.o1.frequency.setTargetAtTime(f, t, 1.5); v.o2.frequency.setTargetAtTime(f / 2, t, 1.5);
+          v.g.gain.cancelScheduledValues(t);
+          v.g.gain.setTargetAtTime(0.05, t, 2.5);
+        });
+      }
+      nextChord(); setInterval(nextChord, 9000);
+
+      // night air: very quiet filtered noise
+      const nb = ac.createBuffer(1, ac.sampleRate * 2, ac.sampleRate);
+      const nd = nb.getChannelData(0); for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
+      const noise = ac.createBufferSource(); noise.buffer = nb; noise.loop = true;
+      const nf = ac.createBiquadFilter(); nf.type = "bandpass"; nf.frequency.value = 500; nf.Q.value = 0.6;
+      const ng = ac.createGain(); ng.gain.value = 0.012;
+      noise.connect(nf); nf.connect(ng); ng.connect(master); noise.start();
+
+      // a music-box note: a short bright ping that fades
+      function ping(midi, vol) {
+        const t = ac.currentTime;
+        const o = ac.createOscillator(), o2 = ac.createOscillator(), g = ac.createGain();
+        o.type = "sine"; o2.type = "sine";
+        o.frequency.value = hz(midi); o2.frequency.value = hz(midi) * 3.01;   // metallic overtone
+        const g2 = ac.createGain(); g2.gain.value = 0.25;
+        o.connect(g); o2.connect(g2); g2.connect(g); g.connect(bus);
+        g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol, t + 0.008);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 2.2);
+        o.start(t); o2.start(t); o.stop(t + 2.3); o2.stop(t + 2.3);
+      }
+      const note = step => ROOT + 24 + SCALE[((step % 7) + 7) % 7] + 12 * Math.floor(step / 7);
+      (function music() {                              // now and then, a few notes
+        if (Math.random() < 0.6) {
+          let s = Math.floor(Math.random() * 7);
+          const n = 1 + Math.floor(Math.random() * 3);
+          for (let k = 0; k < n; k++) setTimeout(() => ping(note(s + k * 2), 0.06), k * 380);
+        }
+        setTimeout(music, 3000 + Math.random() * 4000);
+      })();
+
+      master.gain.setTargetAtTime(0.9, ac.currentTime, 1.5);   // fade in
+      return { ac, master, ping, note };
+    }
+
+    let soundOn = false;
+    d3.select("#sound").on("click", () => {
+      soundOn = !soundOn;
+      if (soundOn && !audio) audio = startAudio();
+      if (audio) {
+        audio.ac.resume();
+        audio.master.gain.setTargetAtTime(soundOn ? 0.9 : 0, audio.ac.currentTime, 0.6);
+      }
+      d3.select("#sound").html(soundOn ? "&#9835; sound on" : "&#9835; sound off");
+    });
+
+    // a chime when a new dream star is found under the cursor (rare dreams ring higher)
+    let lastChime = -1;
+    setInterval(() => {
+      if (!soundOn || !audio || hovered < 0 || hovered === lastChime) { if (hovered < 0) lastChime = -1; return; }
+      lastChime = hovered;
+      const rare = st[hovered] < 0 ? 0 : Math.round((sa[hovered] - 0.5) * 8);
+      audio.ping(audio.note(3 + rare + Math.floor(Math.random() * 3)), 0.07);
+    }, 60);
 
 
     // ---------- 10. THE EYE: a pasted pupil that follows you ----------
