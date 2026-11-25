@@ -15,7 +15,7 @@
   <style>
     body {
       margin: 0;
-      background: #0e1646;
+      background: #161e34;
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -745,9 +745,9 @@
         return [Math.cos(a) * r, Math.sin(a) * r];
       });
       const d = "M" + pts.map(p => p.map(v => v.toFixed(1)).join(",")).join("L") + "Z";
-      g.append("path").attr("d", d).attr("transform", "translate(2,3)").attr("fill", "#000").attr("opacity", 0.35);
-      g.append("path").attr("d", d).attr("fill", "#f6c93c").attr("stroke", "#e0a91f").attr("stroke-width", 0.8)
-        .attr("filter", "url(#boil)");
+      g.append("circle").attr("r", R * 1.6).attr("fill", "#f3d977").attr("opacity", 0.12);   // soft glow
+      g.append("path").attr("d", d).attr("fill", "#e9cf5c").attr("stroke", "#3a2f1a")
+        .attr("stroke-width", 0.9).attr("stroke-linejoin", "round");
     }
     function renderMine() {
       mineLayer.selectAll("*").remove();
@@ -952,7 +952,7 @@
       ctx.fillStyle = "rgba(0,0,0,0.35)"; ctx.fill();
       // clip to the circle
       ctx.beginPath(); ctx.arc(cx, cy, LENS_R, 0, Math.PI * 2); ctx.clip();
-      ctx.fillStyle = "#0b1238"; ctx.fillRect(cx - LENS_R, cy - LENS_R, LENS_R * 2, LENS_R * 2);
+      ctx.fillStyle = "#121a2e"; ctx.fillRect(cx - LENS_R, cy - LENS_R, LENS_R * 2, LENS_R * 2);
       // magnified view: screen = lens centre + MAG * (normal position - lens centre)
       const a = m.a * MAG, d = m.d * MAG;
       const e = cx + MAG * (m.e - box.left - cx), f = cy + MAG * (m.f - box.top - cy);
@@ -1011,7 +1011,7 @@
       // the same zoom/position as the svg collage, so stars stay in place when we zoom
       const m = svg.node().getScreenCTM();
       ctx.setTransform(1, 0, 0, 1, 0, 0);
-      ctx.fillStyle = "#0e1646";
+      ctx.fillStyle = "#161e34";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.setTransform(dpr * m.a, 0, 0, dpr * m.d, dpr * (m.e - box.left), dpr * (m.f - box.top));
 
