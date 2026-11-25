@@ -15,7 +15,7 @@
   <style>
     body {
       margin: 0;
-      background: #15112a;
+      background: #0e1646;
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -726,7 +726,7 @@
       try { localStorage.setItem("dreamtales-mine", JSON.stringify(myDreams)); } catch (e) {}
     }
 
-    const mineLayer = svg.append("g").style("pointer-events", "none");
+    const mineLayer = svg.append("g");
 
     function drawMyStar(g) {
       g.append("circle").attr("r", 11).attr("fill", "#ffffff").attr("opacity", 0.35);
@@ -735,7 +735,48 @@
         .attr("fill", "#ffffff")
         .attr("filter", "url(#boil)");
     }
-    myDreams.forEach(m => drawMyStar(mineLayer.append("g").attr("transform", `translate(${m.x}, ${m.y})`)));
+
+    // THE LAST 7 DREAMS: the 7 newest dreams typed in by visitors are yellow paper stars
+    // (Little Prince style). A new one replaces the oldest, which becomes a small white star.
+    const RECENT = 7;
+    function paperStar(g, R) {                       // a hand-cut five-point star with a shadow
+      const pts = d3.range(10).map(k => {
+        const r = k % 2 ? R * 0.45 : R, a = k * Math.PI / 5 - Math.PI / 2;
+        return [Math.cos(a) * r, Math.sin(a) * r];
+      });
+      const d = "M" + pts.map(p => p.map(v => v.toFixed(1)).join(",")).join("L") + "Z";
+      g.append("path").attr("d", d).attr("transform", "translate(2,3)").attr("fill", "#000").attr("opacity", 0.35);
+      g.append("path").attr("d", d).attr("fill", "#f6c93c").attr("stroke", "#e0a91f").attr("stroke-width", 0.8)
+        .attr("filter", "url(#boil)");
+    }
+    function renderMine() {
+      mineLayer.selectAll("*").remove();
+      const firstRecent = Math.max(0, myDreams.length - RECENT);
+      myDreams.forEach((m, k) => {
+        const g = mineLayer.append("g").attr("transform", `translate(${m.x}, ${m.y})`);
+        if (k < firstRecent) {                       // older: a small white star, like the archive
+          g.append("circle").attr("r", 1.3).attr("fill", "#fff8e1").attr("opacity", 0.8);
+          g.style("pointer-events", "none");
+          return;
+        }
+        paperStar(g, 11);
+        g.style("cursor", "pointer")
+          .on("mouseover", event => {
+            const [px, py] = d3.pointer(event, document.getElementById("stage"));
+            d3.select("#note").style("display", "block").style("left", (px + 18) + "px").style("top", (py + 18) + "px")
+              .html(`<div class="id">one of the last ${RECENT} dreams shared</div>${escapeHTML(shorten(m.text, 180))}`);
+          })
+          .on("mouseout", () => d3.select("#note").style("display", "none"))
+          .on("click", event => {
+            event.stopPropagation();
+            const body = escapeHTML(m.text);
+            showPage(`<button class="closeBtn" type="button" onclick="document.getElementById('pageWrap').style.display='none'">✕</button>
+              <h3>A dream shared here</h3><p class="small">one of the last ${RECENT} dreams</p>
+              <p><span class="drop">${body.charAt(0)}</span>${body.slice(1)}</p>`);
+          });
+      });
+    }
+    renderMine();
 
     const stopMotion = t => Math.floor(t * 12) / 12;      // 12 jerky steps instead of a smooth glide
 
@@ -760,8 +801,9 @@
       saveMine();
 
       const star = mineLayer.append("g").attr("transform", "translate(720, 800)");
-      drawMyStar(star);
-      star.transition().duration(1500).ease(stopMotion).attr("transform", `translate(${x}, ${y})`);
+      paperStar(star, 11);
+      star.transition().duration(1500).ease(stopMotion).attr("transform", `translate(${x}, ${y})`)
+        .on("end", renderMine);                     // the oldest yellow star turns white
 
       if (pd) {
         setTimeout(() => piece.classed("active", true), 1500);
@@ -866,12 +908,12 @@
     const nebulaImg = new Image();
     const nebula = document.createElement("canvas");      // blurred once, then reused every frame
     nebula.width = W; nebula.height = H; nebula.complete = false;
-    nebulaImg.onload = () => {
-      const c = nebula.getContext("2d");
-      c.filter = "blur(14px)"; c.drawImage(nebulaImg, 0, 0, W, H);
+    nebula.width = 2 * W; nebula.height = 2 * H;
+    nebulaImg.onload = () => {                            // blue paper sky (Little Prince palette)
+      nebula.getContext("2d").drawImage(nebulaImg, 0, 0, 2 * W, 2 * H);
       nebula.complete = true; nebula.naturalWidth = W;
     };
-    nebulaImg.src = "layer-sky.jpg";
+    nebulaImg.src = "paper-sky.jpg";
 
     // a soft glow sprite for the bright stars
     const glow = document.createElement("canvas");
@@ -910,13 +952,13 @@
       ctx.fillStyle = "rgba(0,0,0,0.35)"; ctx.fill();
       // clip to the circle
       ctx.beginPath(); ctx.arc(cx, cy, LENS_R, 0, Math.PI * 2); ctx.clip();
-      ctx.fillStyle = "#0a0716"; ctx.fillRect(cx - LENS_R, cy - LENS_R, LENS_R * 2, LENS_R * 2);
+      ctx.fillStyle = "#0b1238"; ctx.fillRect(cx - LENS_R, cy - LENS_R, LENS_R * 2, LENS_R * 2);
       // magnified view: screen = lens centre + MAG * (normal position - lens centre)
       const a = m.a * MAG, d = m.d * MAG;
       const e = cx + MAG * (m.e - box.left - cx), f = cy + MAG * (m.f - box.top - cy);
       ctx.setTransform(dpr * a, 0, 0, dpr * d, dpr * e, dpr * f);
       if (nebula.complete && nebula.naturalWidth) {
-        ctx.globalAlpha = 0.3; ctx.drawImage(nebula, 0, 0, W, H); ctx.globalAlpha = 1;
+        ctx.globalAlpha = 0.7; ctx.drawImage(nebula, 0, 0, W, H); ctx.globalAlpha = 1;
       }
       // the stars under the lens, as sparkles
       const [qx, qy] = [(cx - (m.e - box.left)) / m.a, (cy - (m.f - box.top)) / m.d];   // lens centre on the collage
@@ -969,14 +1011,12 @@
       // the same zoom/position as the svg collage, so stars stay in place when we zoom
       const m = svg.node().getScreenCTM();
       ctx.setTransform(1, 0, 0, 1, 0, 0);
-      ctx.fillStyle = "#0b0816";
+      ctx.fillStyle = "#0e1646";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.setTransform(dpr * m.a, 0, 0, dpr * m.d, dpr * (m.e - box.left), dpr * (m.f - box.top));
 
       if (nebula.complete && nebula.naturalWidth) {
-        ctx.globalAlpha = 0.45;
         ctx.drawImage(nebula, 0, 0, W, H);
-        ctx.globalAlpha = 1;
       }
 
       // stars, grouped into a few brightness levels (much faster than one at a time)
