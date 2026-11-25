@@ -11,6 +11,7 @@
   <script src="layers-data.js"></script>
   <script src="dreams.js"></script>
   <script src="dream-themes.js"></script>
+  <script src="sky-stars.js"></script>
   <style>
     body {
       margin: 0;
@@ -27,7 +28,11 @@
     html, body { height: 100%; }
     body { justify-content: center; overflow: hidden; }
     #stage { width: 100vw; height: 100vh; }
-    #map { width: 100%; height: 100%; }
+    #map { width: 100%; height: 100%; position: relative; }
+    /* the star sky is a canvas BEHIND the svg collage */
+    #starsky { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+    #page .closeBtn { float: right; cursor: pointer; background: none; border: none;
+                      font-family: "IM Fell English SC", Georgia, serif; font-size: 18px; color: #2b1d0e; }
     /* small caption floating at the top of the collage (only when there is something to say) */
     #message {
       position: absolute; top: 2.5%; left: 50%; transform: translateX(-50%);
@@ -156,6 +161,7 @@
 <body>
 
   <div id="stage">
+    <canvas id="starsky"></canvas>
     <button id="back">&larr; back to the collage</button>
     <div id="note"></div>
     <p id="message"></p>
@@ -183,9 +189,7 @@
       .attr("viewBox", fullView.join(" "))
       .attr("preserveAspectRatio", "xMidYMid slice");   // fill the screen (edges may be trimmed)
 
-    svg.append("image")
-      .attr("href", "layer-sky.jpg")
-      .attr("width", W).attr("height", H);
+    // (the sky itself is now drawn on the canvas behind — see section 11)
 
 
     // ---------- 2. PAPER-CUT EFFECT ----------
@@ -820,6 +824,153 @@
         })
         .on("mouseout", () => d3.select("#note").style("display", "none"));
     };
+
+    // ---------- 11. THE STAR SKY: one star per DreamBank dream ----------
+    // Like Breathing Earth: one mark per data point. 27,698 dreams = 27,698 stars,
+    // drawn on a <canvas> (thousands of SVG circles would be too slow).
+    // Each constellation gathers in its own patch; rare ones shine brighter.
+    // Hover a star to read its beginning, click it to open the whole dream.
+    const canvas = document.getElementById("starsky");
+    const ctx = canvas.getContext("2d");
+    const N = skyStars.length / 4;
+    const sx = new Float32Array(N), sy = new Float32Array(N), sr = new Float32Array(N),
+          sa = new Float32Array(N), sp = new Float32Array(N), ss = new Float32Array(N), st = new Int8Array(N);
+    const maxCount = d3.max(themes, t => t.count);
+    for (let i = 0; i < N; i++) {
+      sx[i] = skyStars[4 * i] / 2;
+      sy[i] = skyStars[4 * i + 1] / 2;
+      st[i] = skyStars[4 * i + 2];
+      const rare = st[i] < 0 ? 0 : 1 - Math.log(themes[st[i]].count) / Math.log(maxCount);   // 0 common .. ~0.5 rare
+      sr[i] = 0.45 + skyStars[4 * i + 3] * 0.1 + rare * 1.2;                // size: dream length + rarity
+      sa[i] = st[i] < 0 ? 0.35 : 0.5 + rare;                               // brightness: rare = brighter
+      sp[i] = Math.random() * Math.PI * 2;                                 // twinkle phase
+      ss[i] = 0.6 + Math.random() * 2.2;                                   // twinkle speed
+    }
+    const tree = d3.quadtree().x(i => sx[i]).y(i => sy[i]).addAll(d3.range(N));
+
+    // the old sky photo, blurred and dimmed, only as a soft nebula glow behind the stars
+    const nebula = new Image();
+    nebula.src = "layer-sky.jpg";
+
+    // a soft glow sprite for the bright stars
+    const glow = document.createElement("canvas");
+    glow.width = glow.height = 64;
+    const g2 = glow.getContext("2d");
+    const grad = g2.createRadialGradient(32, 32, 0, 32, 32, 32);
+    grad.addColorStop(0, "rgba(255,246,210,0.9)");
+    grad.addColorStop(0.25, "rgba(255,230,170,0.35)");
+    grad.addColorStop(1, "rgba(255,220,150,0)");
+    g2.fillStyle = grad;
+    g2.fillRect(0, 0, 64, 64);
+
+    let hovered = -1;
+    const LEVELS = 8;
+
+    function drawSky(now) {
+      const dpr = window.devicePixelRatio || 1;
+      const box = canvas.getBoundingClientRect();
+      if (canvas.width !== Math.round(box.width * dpr) || canvas.height !== Math.round(box.height * dpr)) {
+        canvas.width = Math.round(box.width * dpr);
+        canvas.height = Math.round(box.height * dpr);
+      }
+      // the same zoom/position as the svg collage, so stars stay in place when we zoom
+      const m = svg.node().getScreenCTM();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.fillStyle = "#0b0816";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.setTransform(dpr * m.a, 0, 0, dpr * m.d, dpr * (m.e - box.left), dpr * (m.f - box.top));
+
+      if (nebula.complete && nebula.naturalWidth) {
+        ctx.globalAlpha = 0.45;
+        ctx.filter = "blur(14px)";
+        ctx.drawImage(nebula, 0, 0, W, H);
+        ctx.filter = "none";
+        ctx.globalAlpha = 1;
+      }
+
+      // stars, grouped into a few brightness levels (much faster than one at a time)
+      const t = now / 1000;
+      const paths = Array.from({ length: LEVELS }, () => new Path2D());
+      for (let i = 0; i < N; i++) {
+        const a = sa[i] * (0.55 + 0.45 * Math.sin(t * ss[i] + sp[i]));
+        const lvl = Math.max(0, Math.min(LEVELS - 1, Math.floor(a * LEVELS)));
+        const r = sr[i];
+        paths[lvl].rect(sx[i] - r / 2, sy[i] - r / 2, r, r);
+      }
+      for (let l = 0; l < LEVELS; l++) {
+        ctx.fillStyle = `rgba(255, 248, 225, ${((l + 0.5) / LEVELS).toFixed(3)})`;
+        ctx.fill(paths[l]);
+      }
+
+      // glow on the rare (brighter) stars + the hovered one
+      ctx.globalCompositeOperation = "lighter";
+      for (let i = 0; i < N; i++) {
+        if (sa[i] < 0.8 && i !== hovered) continue;
+        const k = i === hovered ? 22 : sr[i] * 5;
+        ctx.globalAlpha = i === hovered ? 1 : 0.35 + 0.3 * Math.sin(t * ss[i] + sp[i]);
+        ctx.drawImage(glow, sx[i] - k / 2, sy[i] - k / 2, k, k);
+      }
+      ctx.globalAlpha = 1;
+      ctx.globalCompositeOperation = "source-over";
+      requestAnimationFrame(drawSky);
+    }
+    requestAnimationFrame(drawSky);
+
+    // dream texts are loaded in files of 500, only when needed
+    const chunks = new Map();
+    function getDream(i) {
+      const c = Math.floor(i / skyChunk);
+      if (!chunks.has(c)) chunks.set(c, fetch(`sky-dreams-${c}.json`).then(r => r.json()));
+      return chunks.get(c).then(rows => rows[i % skyChunk]);
+    }
+    const themeName = i => st[i] < 0 ? "an everyday dream" : themes[st[i]].label;
+
+    // hover: find the nearest star (quadtree), show the start of its dream
+    svg.on("mousemove.sky", function (event) {
+      const overPiece = event.target.closest && event.target.closest(".piece");
+      if (svg.classed("zoomed") || overPiece) {
+        if (hovered >= 0) { hovered = -1; d3.select("#note").style("display", "none"); svg.style("cursor", null); }
+        return;
+      }
+      const [mx, my] = d3.pointer(event, svg.node());
+      const m = svg.node().getScreenCTM();
+      const found = tree.find(mx, my, 7 / m.a);          // within ~7 screen pixels
+      const i = found === undefined ? -1 : found;
+      if (i === hovered) {
+        if (i >= 0) {
+          const [px, py] = d3.pointer(event, document.getElementById("stage"));
+          d3.select("#note").style("left", (px + 18) + "px").style("top", (py + 18) + "px");
+        }
+        return;
+      }
+      hovered = i;
+      svg.style("cursor", i >= 0 ? "pointer" : null);
+      if (i < 0) { d3.select("#note").style("display", "none"); return; }
+      const [px, py] = d3.pointer(event, document.getElementById("stage"));
+      d3.select("#note").style("display", "block")
+        .style("left", (px + 18) + "px").style("top", (py + 18) + "px")
+        .html(`<div class="id">${themeName(i)}</div>…`);
+      getDream(i).then(d => {
+        if (hovered !== i) return;
+        d3.select("#note").html(`<div class="id">${themeName(i)} · ${escapeHTML(d[1])}</div>${escapeHTML(shorten(d[0], 180))}`);
+      });
+    });
+    svg.on("mouseleave.sky", () => { hovered = -1; d3.select("#note").style("display", "none"); });
+
+    // click: the whole dream on a torn book page
+    svg.on("click.sky", function (event) {
+      if (hovered < 0 || svg.classed("zoomed")) return;
+      const i = hovered;
+      getDream(i).then(d => {
+        const title = st[i] < 0 ? "An everyday dream" : `A dream of ${themes[st[i]].label}`;
+        const body = escapeHTML(d[0]);
+        showPage(`<button class="closeBtn" type="button" onclick="document.getElementById('pageWrap').style.display='none'">✕</button>
+          <h3>${title}</h3>
+          <p class="small">${escapeHTML(d[1])}${d[2] ? " · " + escapeHTML(d[2]) : ""}</p>
+          <p><span class="drop">${body.charAt(0)}</span>${body.slice(1)}</p>`);
+      });
+    });
+
 
     // ---------- 7. HOVER + CLICK ----------
     worldPieces
