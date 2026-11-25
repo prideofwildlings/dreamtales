@@ -517,7 +517,15 @@
     boilMerge.append("feMergeNode").attr("in", "SourceGraphic");
 
     // paper colours
-    const ORANGE = "#e8692b", YELLOW = "#f6c744", SMOKE = "#cfc6b4", WISP = "#e8e1cf";
+    // the flame is a black-and-white ink drawing: cream paper, ink outlines, pen hatching
+    const PAL = { outer: "#f3ede0", inner: "#fffdf6", smoke: "#ece5d6", wisp: "#1b1714", ink: "#1b1714", hatch: true };
+    const ORANGE = PAL.outer, YELLOW = PAL.inner, SMOKE = PAL.smoke, WISP = PAL.wisp;
+
+    // ink hatching (diagonal pen lines) for the sketch flame
+    const hatch = defs.append("pattern").attr("id", "hatch").attr("patternUnits", "userSpaceOnUse")
+      .attr("width", 3.2).attr("height", 3.2).attr("patternTransform", "rotate(35)");
+    hatch.append("line").attr("x1", 0).attr("y1", 0).attr("x2", 0).attr("y2", 3.2)
+      .attr("stroke", "#1b1714").attr("stroke-width", 0.7);
 
     // each frame = a list of paper shapes (drawn with the mouth at 0,0, flame pointing right)
     const frames = [
@@ -561,19 +569,36 @@
     function drawFrame(shapes) {
       flame.selectAll("*").remove();
       shapes.forEach(s => {
-        if (s.d) flame.append("path").attr("d", s.d).attr("fill", s.fill);
-        if (s.ellipse) flame.append("ellipse")
+        const outerShape = s.fill === ORANGE || s.fill === SMOKE;
+        let el = null;
+        if (s.d) el = flame.append("path").attr("d", s.d);
+        if (s.ellipse) el = flame.append("ellipse")
           .attr("cx", s.ellipse[0]).attr("cy", s.ellipse[1])
-          .attr("rx", s.ellipse[2]).attr("ry", s.ellipse[3])
-          .attr("fill", s.fill);
+          .attr("rx", s.ellipse[2]).attr("ry", s.ellipse[3]);
+        if (el) {
+          el.attr("fill", s.fill).attr("stroke", PAL.ink).attr("stroke-width", 0.8).attr("stroke-linejoin", "round");
+          if (PAL.hatch && outerShape) {                       // shade the outer flame and smoke with pen lines
+            const copy = el.clone().attr("fill", "url(#hatch)").attr("stroke", "none").attr("opacity", 0.55);
+            flame.node().appendChild(copy.node());
+          }
+        }
         if (s.wisp) flame.append("path").attr("d", s.wisp)
           .attr("fill", "none").attr("stroke", WISP).attr("stroke-width", 2.5)
           .attr("stroke-linecap", "round");
       });
     }
 
+    // the dragon jerks its head: pulls back on the spark, thrusts forward with the fire
+    const dragonD = layers.find(d => d.name === "dragon");
+    const pivot = [dragonD.x + dragonD.w * 0.42, dragonD.y + dragonD.h * 0.55];
+    const dragonImg = dragonGroup.select(".art image");
+    const jerk = [-3, 4, 3, 4, 3, 2, 1, 0];                      // degrees, for the first frames of each breath
+    const flameBase = `translate(${mouth[0]}, ${mouth[1]}) rotate(10) scale(1.4)`;
     let step = 0;
     setInterval(() => {
+      const a = step < jerk.length ? jerk[step] : 0;
+      dragonImg.attr("transform", a ? `rotate(${a}, ${pivot[0]}, ${pivot[1]})` : null);
+      flame.attr("transform", `rotate(${a}, ${pivot[0]}, ${pivot[1]}) ${flameBase}`);
       drawFrame(frames[sequence[step]]);
       boilNoise.attr("seed", Math.floor(Math.random() * 1000));   // re-cut the paper edge
       step = (step + 1) % sequence.length;
