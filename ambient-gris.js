@@ -54,9 +54,10 @@
     const eFb = ac.createGain(); eFb.gain.value = 0.42;
     echo.connect(eLp); eLp.connect(eFb); eFb.connect(echo);
     const eOut = ac.createGain(); eOut.gain.value = 0.5; eLp.connect(eOut); eOut.connect(dry); eOut.connect(rev);
-    let toEcho = false;
+    let toEcho = false, starPan = 0;
     function route(node, pan, send) {
-      const p = ac.createStereoPanner(); p.pan.value = Math.max(-0.8, Math.min(0.8, pan));
+      if (toEcho && starPan) pan = pan * 0.35 + starPan;       // star sounds come from where the star sits
+      const p = ac.createStereoPanner(); p.pan.value = Math.max(-0.85, Math.min(0.85, pan));
       node.connect(p); p.connect(dry);
       if (toEcho) p.connect(echo);
       const s = ac.createGain(); s.gain.value = send; p.connect(s); s.connect(rev);
@@ -283,6 +284,156 @@
       idleG.gain.setTargetAtTime(on ? 1 : 0, now, on ? 2.2 : 0.5);    // slow to open, quick to step back
     }
 
+
+    // ---------- regions: every constellation is its own little universe ----------
+    // As the cursor drifts across the sky, the sound of the nearest constellations
+    // fades in (dragons: horns and drums; water: a stream; animals: crickets and an owl...).
+    const pick = a => a[Math.floor(Math.random() * a.length)];
+    const tonesAt = (t, lo, hi) => chordTones(currentChord(t), lo, hi);
+    function noiseSrc(rate) { const n = ac.createBufferSource(); n.buffer = abuf; n.loop = true; n.playbackRate.value = rate || 1; return n; }
+    function lfoTo(L, keep, param, rate, depth) {
+      const o = keep(ac.createOscillator()); o.frequency.value = rate;
+      const d = ac.createGain(); d.gain.value = depth; o.connect(d); d.connect(param); o.start();
+    }
+    function bed(L, keep, o) {                       // a continuous noise texture
+      const n = keep(noiseSrc(o.rate)), fl = ac.createBiquadFilter();
+      fl.type = o.type || "bandpass"; fl.frequency.value = o.f || 800; fl.Q.value = o.q == null ? 0.7 : o.q;
+      const g = ac.createGain(); g.gain.value = o.gain;
+      if (o.lfo) lfoTo(L, keep, fl.frequency, o.lfo, o.depth);
+      if (o.amp) lfoTo(L, keep, g.gain, o.amp, o.ampDepth);
+      const p = ac.createStereoPanner(); p.pan.value = o.pan || 0;
+      n.connect(fl); fl.connect(g); g.connect(p); p.connect(L.out); n.start(ac.currentTime, Math.random() * 3);
+    }
+    function tone(L, keep, o) {                      // a continuous drone
+      const fl = ac.createBiquadFilter(); fl.type = "lowpass"; fl.frequency.value = o.lp || 2000;
+      const g = ac.createGain(); g.gain.value = o.gain;
+      o.freqs.forEach((f, i) => {
+        const osc = keep(ac.createOscillator()); osc.type = o.type || "sine"; osc.frequency.value = f;
+        osc.detune.value = (i % 2 ? 4 : -4); if (o.wob) wobAmt.connect(osc.detune);
+        osc.connect(fl); osc.start();
+      });
+      if (o.amp) lfoTo(L, keep, g.gain, o.amp, o.ampDepth);
+      const p = ac.createStereoPanner(); p.pan.value = o.pan || 0;
+      fl.connect(g); g.connect(p); p.connect(L.out);
+    }
+    function blip(L, t, f, o) {                      // one short sound event
+      o = o || {};
+      const g = ac.createGain(), dur = o.dur || 0.5;
+      g.gain.value = 0;
+      g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(o.a || 0.02, t + (o.att || 0.004));
+      g.gain.exponentialRampToValueAtTime(0.00001, t + dur);
+      const fl = ac.createBiquadFilter(); fl.type = "lowpass"; fl.frequency.value = o.lp || 6000;
+      (o.parts || [[1, 1]]).forEach(([r, a]) => {
+        const osc = ac.createOscillator(), og = ac.createGain(); osc.type = o.type || "sine";
+        osc.frequency.setValueAtTime(f * r, t);
+        if (o.glide) osc.frequency.exponentialRampToValueAtTime(o.glide * r, t + dur * (o.glideT || 0.9));
+        if (o.vib) { const v = ac.createOscillator(), vg = ac.createGain(); v.frequency.value = 6; vg.gain.value = o.vib; v.connect(vg); vg.connect(osc.detune); v.start(t); v.stop(t + dur + 0.05); }
+        og.gain.value = a; osc.connect(og); og.connect(fl); osc.start(t); osc.stop(t + dur + 0.05);
+      });
+      const p = ac.createStereoPanner(); p.pan.value = o.pan == null ? Math.random() * 1.2 - 0.6 : o.pan;
+      fl.connect(g); g.connect(p); p.connect(L.out);
+    }
+    function hit(L, t, o) {                          // one short noise event (tick, crackle, thunder...)
+      const n = noiseSrc(o.rate), fl = ac.createBiquadFilter(), g = ac.createGain(), dur = o.dur || 0.05;
+      g.gain.value = 0;
+      fl.type = o.type || "bandpass"; fl.frequency.value = o.f || 2000; fl.frequency.setValueAtTime(o.f || 2000, t); fl.Q.value = o.q || 1;
+      if (o.fTo) fl.frequency.exponentialRampToValueAtTime(o.fTo, t + dur);
+      g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(o.a || 0.02, t + (o.att || 0.002));
+      g.gain.exponentialRampToValueAtTime(0.00001, t + dur);
+      const p = ac.createStereoPanner(); p.pan.value = o.pan == null ? Math.random() * 1.4 - 0.7 : o.pan;
+      n.connect(fl); fl.connect(g); g.connect(p); p.connect(L.out);
+      n.start(t, Math.random() * 3); n.stop(t + dur + 0.05);
+    }
+    const BELL = [[1, 1], [2.76, 0.4], [5.4, 0.18], [8.93, 0.07]];
+    const BOX = [[1, 1], [3.01, 0.2]];
+    const REGION = {
+      house: { every: 1, build: (L, k) => bed(L, k, { type: "lowpass", f: 230, gain: 0.05 }),
+        ev: (t, L) => { L.k = (L.k || 0) + 1; hit(L, t, { f: L.k % 2 ? 2900 : 2300, q: 9, a: 0.035, dur: 0.05, pan: 0.35 });
+          if (Math.random() < 0.06) blip(L, t + 0.5, hz(pick(tonesAt(t, 50, 62))), { type: "triangle", lp: 900, a: 0.05, dur: 3, pan: -0.2 }); } },
+      family: { every: 6, build: (L, k) => tone(L, k, { freqs: [146.83, 220, 293.66, 349.23], type: "triangle", lp: 900, gain: 0.009, wob: 1, amp: 0.12, ampDepth: 0.004 }),
+        ev: (t, L) => { const c = tonesAt(t, 74, 86); blip(L, t, hz(c[c.length - 1]), { parts: BOX, a: 0.035, dur: 2 }); blip(L, t + 0.6, hz(c[1] || c[0]), { parts: BOX, a: 0.03, dur: 2.4 }); } },
+      school: { every: 8, build: (L, k) => bed(L, k, { f: 1500, q: 0.5, gain: 0.012 }),
+        ev: (t, L) => { if (Math.random() < 0.7) { const c = tonesAt(t, 76, 90); [2, 1, 0].forEach((j, n) => blip(L, t + n * 0.38, hz(c[Math.min(j, c.length - 1)]), { parts: BELL, a: 0.03, dur: 2.2, pan: 0.4 })); } } },
+      travel: { every: 0.42, build: (L, k) => bed(L, k, { type: "lowpass", f: 300, gain: 0.02 }),
+        ev: (t, L) => { L.k = (L.k || 0) + 1; hit(L, t, { f: 420, q: 1.4, a: [0.05, 0.022, 0.035, 0.022][L.k % 4], dur: 0.13, pan: -0.25 });
+          if (L.k % 23 === 0) blip(L, t, 760, { glide: 540, dur: 2.6, a: 0.02, att: 0.8, pan: 0.5 }); } },
+      water: { every: 0.45, build: (L, k) => { bed(L, k, { f: 1300, q: 1.2, gain: 0.03, lfo: 0.3, depth: 500, amp: 7, ampDepth: 0.015, pan: -0.3 });
+          bed(L, k, { type: "lowpass", f: 320, gain: 0.05, amp: 0.09, ampDepth: 0.04, pan: 0.3 }); },
+        ev: (t, L) => { if (Math.random() < 0.35) { const f = hz(pick(tonesAt(t, 84, 98))); blip(L, t, f, { glide: f * 0.78, glideT: 0.5, dur: 0.25, a: 0.03 }); } } },
+      love: { every: 1.35, build: (L, k) => tone(L, k, { freqs: [174.61, 220, 261.63, 329.63], type: "triangle", lp: 1100, gain: 0.008, wob: 1, amp: 0.08, ampDepth: 0.003 }),
+        ev: (t, L) => { blip(L, t, 72, { lp: 300, a: 0.09, dur: 0.3, pan: 0 }); blip(L, t + 0.28, 68, { lp: 300, a: 0.06, dur: 0.3, pan: 0 }); } },
+      death: { every: 12, build: (L, k) => { tone(L, k, { freqs: [73.42, 110, 146.83], lp: 400, gain: 0.02 }); bed(L, k, { type: "lowpass", f: 500, q: 0.3, gain: 0.015 }); },
+        ev: (t, L) => blip(L, t, hz(pick(tonesAt(t, 45, 57))), { parts: BELL, lp: 900, a: 0.05, dur: 7, att: 0.01 }) },
+      falling: { every: 4, build: (L, k) => bed(L, k, { type: "highpass", f: 2200, gain: 0.012, lfo: 0.05, depth: 1500 }),
+        ev: (t, L) => { if (Math.random() < 0.75) { const f = hz(pick(tonesAt(t, 79, 91))); blip(L, t, f, { glide: f / 2, dur: 2.4, a: 0.03, att: 0.2 });
+          hit(L, t, { f: 3000, fTo: 400, q: 0.8, a: 0.03, dur: 2, att: 0.4 }); } } },
+      flying: { every: 5, build: (L, k) => { bed(L, k, { f: 900, q: 0.6, gain: 0.035, lfo: 0.07, depth: 700, pan: 0.45 });
+          bed(L, k, { f: 1400, q: 0.8, gain: 0.025, lfo: 0.05, depth: 900, pan: -0.45 }); },
+        ev: (t, L) => { if (Math.random() < 0.6) { const f = hz(pick(tonesAt(t, 79, 88))); blip(L, t, f, { glide: f * 1.5, dur: 1.9, a: 0.018, att: 0.5 }); } } },
+      dance: { every: 0.3, build: () => {},
+        ev: (t, L) => { L.k = (L.k || 0) + 1; const c = tonesAt(t, 74, 91), pat = [0, 2, 1, 3, 2, 4, 3, 1];
+          blip(L, t, hz(c[Math.min(pat[L.k % 8], c.length - 1)]), { parts: BOX, a: L.k % 4 === 0 ? 0.045 : 0.03, dur: 0.9, pan: (L.k % 2 ? 0.3 : -0.3) });
+          if (L.k % 2) hit(L, t, { f: 6500, q: 0.9, a: 0.012, dur: 0.05, pan: 0.5 }); } },
+      animals: { every: 0.26, build: (L, k) => bed(L, k, { type: "lowpass", f: 400, gain: 0.012 }),
+        ev: (t, L) => { if (Math.random() < 0.55) for (let j = 0; j < 3; j++) blip(L, t + j * 0.045, 4400, { dur: 0.03, a: 0.01, pan: L.cr == null ? (L.cr = Math.random() - 0.5) : L.cr });
+          if (Math.random() < 0.035) { const n = 2 + Math.floor(Math.random() * 2); for (let j = 0; j < n; j++) blip(L, t + j * 0.16, 2200, { glide: 3300, dur: 0.12, a: 0.02, pan: 0.6 }); }
+          if (Math.random() < 0.012) { blip(L, t, 420, { type: "triangle", lp: 900, a: 0.04, dur: 0.5, att: 0.06, pan: -0.6 }); blip(L, t + 0.6, 395, { type: "triangle", lp: 900, a: 0.035, dur: 0.7, att: 0.06, pan: -0.6 }); } } },
+      chase: { every: 0.5, build: (L, k) => tone(L, k, { freqs: [73.42, 110], type: "sawtooth", lp: 320, gain: 0.008, amp: 2, ampDepth: 0.005 }),
+        ev: (t, L) => { blip(L, t, 70, { lp: 300, a: 0.08, dur: 0.22, pan: 0 }); blip(L, t + 0.16, 66, { lp: 300, a: 0.05, dur: 0.22, pan: 0 }); } },
+      fire: { every: 0.07, build: (L, k) => bed(L, k, { type: "lowpass", f: 350, gain: 0.05, amp: 0.3, ampDepth: 0.02 }),
+        ev: (t, L) => { if (Math.random() < 0.35) hit(L, t, { f: 1500 + Math.random() * 3500, q: 2, a: 0.01 + Math.random() * 0.03, dur: 0.01 + Math.random() * 0.025 }); } },
+      storm: { every: 10, build: (L, k) => { bed(L, k, { type: "highpass", f: 3500, gain: 0.02, amp: 9, ampDepth: 0.005 }); bed(L, k, { type: "lowpass", f: 120, gain: 0.04, amp: 0.07, ampDepth: 0.03 }); },
+        ev: (t, L) => { if (Math.random() < 0.8) hit(L, t, { type: "lowpass", f: 160, q: 0.5, a: 0.25, dur: 4.5, att: 0.3, rate: 0.5 }); } },
+      sky: { every: 2.8, build: (L, k) => { tone(L, k, { freqs: [1174.66, 1760], gain: 0.003, amp: 0.2, ampDepth: 0.002 }); bed(L, k, { f: 2500, q: 0.4, gain: 0.008 }); },
+        ev: (t, L) => { if (Math.random() < 0.6) blip(L, t, hz(pick(tonesAt(t, 96, 108))), { a: 0.018, dur: 1 }); } },
+      moon: { every: 7, build: (L, k) => tone(L, k, { freqs: [587.33, 880, 1174.66], gain: 0.0035, wob: 1, amp: 0.05, ampDepth: 0.002 }),
+        ev: (t, L) => blip(L, t, hz(pick(tonesAt(t, 84, 96))), { parts: [[1, 1], [2, 0.3], [3, 0.12]], a: 0.035, dur: 5.5, att: 0.06 }) },
+      monsters: { every: 5.5, build: (L, k) => tone(L, k, { freqs: [73.42, 74.3, 155.56], type: "sawtooth", lp: 260, gain: 0.012, wob: 1 }),
+        ev: (t, L) => { if (Math.random() < 0.7) hit(L, t, { f: 1800, fTo: 600, q: 5, a: 0.05, dur: 1.6, att: 0.5 });
+          if (Math.random() < 0.3) blip(L, t + 1.2, 62, { type: "sawtooth", glide: 50, lp: 500, a: 0.03, dur: 0.9, att: 0.05 }); } },
+      aliens: { every: 0.4, build: (L, k) => bed(L, k, { f: 3000, q: 10, gain: 0.01, lfo: 0.5, depth: 1500 }),
+        ev: (t, L) => { if (Math.random() < 0.28) { const c = tonesAt(t, 81, 100); blip(L, t, hz(pick(c)), { dur: 0.08, a: 0.018 }); blip(L, t + 0.1, hz(pick(c)), { dur: 0.08, a: 0.015 }); }
+          if (Math.random() < 0.05) { const f = hz(pick(tonesAt(t, 69, 79))); blip(L, t, f, { glide: f * 1.33, dur: 2.2, a: 0.025, att: 0.3, vib: 25 }); } } },
+      dragons: { every: 8, build: (L, k) => tone(L, k, { freqs: [73.42, 110, 146.83], type: "sawtooth", lp: 420, gain: 0.011, amp: 0.1, ampDepth: 0.007 }),
+        ev: (t, L) => { hit(L, t, { type: "lowpass", f: 110, q: 0.6, a: 0.12, dur: 2, att: 0.01, rate: 0.6 }); blip(L, t, 58, { glide: 46, lp: 400, a: 0.08, dur: 1.6 });
+          if (Math.random() < 0.6) tonesAt(t, 67, 91).slice(0, 7).forEach((m, j) => blip(L, t + 2 + j * 0.06, hz(m), { type: "triangle", lp: 2600, a: 0.022, dur: 1.6, pan: -0.5 + j * 0.15 })); } },
+      castle: { every: 9, build: (L, k) => tone(L, k, { freqs: [146.83, 220, 293.66], type: "sawtooth", lp: 650, gain: 0.0045, wob: 1, amp: 0.06, ampDepth: 0.002 }),
+        ev: (t, L) => { const c = tonesAt(t, 62, 74); [0, 1.3].forEach((d, j) => blip(L, t + d, hz(c[j % c.length]), { parts: BELL, lp: 2500, a: 0.04, dur: 5, pan: 0.5 }));
+          if (Math.random() < 0.45) { const m = tonesAt(t, 67, 79); [0, 2, 1, 0].forEach((j, n) => blip(L, t + 4 + n * 0.36, hz(m[Math.min(j, m.length - 1)]), { type: "triangle", lp: 1800, a: 0.025, dur: 1.2, pan: -0.4 })); } } },
+    };
+    const NORM = {house: 0.539, family: 0.543, school: 0.791, travel: 1.047, water: 0.358, love: 0.467, death: 0.222, falling: 0.586, flying: 0.361, dance: 0.454, animals: 1.172, chase: 0.436, fire: 0.486, storm: 0.491, sky: 1.024, moon: 0.585, monsters: 0.601, aliens: 1.893, dragons: 0.603, castle: 0.537};   // per-region loudness trims (measured)
+    const REG_LEVEL = 1;
+    const regions = {};
+    function makeRegion(id) {
+      const spec = REGION[id]; if (!spec) return null;
+      const out = ac.createGain(); out.gain.value = 0; out.connect(master);
+      const snd = ac.createGain(); snd.gain.value = 1.2; out.connect(snd); snd.connect(rev);
+      const L = { id, out, srcs: [], w: 0, next: ac.currentTime + 0.3, every: spec.every, ev: spec.ev, dead: 0 };
+      spec.build(L, n => (L.srcs.push(n), n));
+      return L;
+    }
+    function setRegions(weights) {
+      const now = ac.currentTime;
+      for (const id in REGION) {
+        const w = weights[id] || 0; let L = regions[id];
+        if (!L && w < 0.03) continue;
+        if (!L) L = regions[id] = makeRegion(id);
+        L.w = w; L.dead = w < 0.03 ? (L.dead || now + 5) : 0;
+        L.out.gain.setTargetAtTime(w * (NORM[id] || 1) * REG_LEVEL, now, 0.7);
+      }
+    }
+    function scheduleRegions(until) {
+      const now = ac.currentTime;
+      for (const id in regions) {
+        const L = regions[id];
+        if (L.dead && now > L.dead) {                 // nobody near for a while: switch it off
+          L.srcs.forEach(n => { try { n.stop(); } catch (e) {} }); L.out.disconnect(); delete regions[id]; continue;
+        }
+        if (L.next < now) L.next = now + 0.05;
+        while (L.next < until) { if (L.w > 0.08) L.ev(L.next, L); L.next += L.every; }
+      }
+    }
+
     // ---- the composer ----
     const BAR = 4.6, BEAT = BAR / 4;
     let tNext = ac.currentTime + 0.3, phraseNo = 0, mel = 74;
@@ -311,6 +462,7 @@
     }
     function phrase(t0) {
       if (state.mode === "atmos") return atmos(t0);
+      if (state.mode === "silent") return t0 + 9;
       const chords = PHRASES[phraseNo % PHRASES.length];
       const cycle = Math.floor(phraseNo / PHRASES.length);
       const last = phraseNo % 4 === 3;
@@ -356,7 +508,7 @@
       phraseNo++;
       return t0 + 4 * BAR + (last ? BAR : 0);              // breathe: a silent bar after every 4th phrase
     }
-    function scheduleUntil(t) { while (tNext < t) tNext = phrase(tNext); scheduleSpace(t); }
+    function scheduleUntil(t) { while (tNext < t) tNext = phrase(tNext); scheduleSpace(t); scheduleRegions(Math.min(t, ac.currentTime + 1.2)); }
     function currentChord(at) {
       const now = at == null ? ac.currentTime : at; let c = CH.Dm9;
       for (const [t, ch] of events) if (t <= now) c = ch;
@@ -368,6 +520,7 @@
     const nlong = ac.createBuffer(1, ac.sampleRate * 1.6, ac.sampleRate);
     { const d = nlong.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; }
     function env(g, t, a, peak, dur) {
+      g.gain.value = 0;
       g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(peak, t + a);
       g.gain.exponentialRampToValueAtTime(0.00001, t + dur);
     }
@@ -426,7 +579,7 @@
         const n = ac.createBufferSource(); n.buffer = nlong;
         const bp = ac.createBiquadFilter(); bp.type = "bandpass"; bp.Q.value = 0.8;
         bp.frequency.setValueAtTime(1600, t); bp.frequency.exponentialRampToValueAtTime(350, t + 1.4);
-        const g = ac.createGain(); g.gain.setValueAtTime(0, t);
+        const g = ac.createGain(); g.gain.value = 0; g.gain.setValueAtTime(0, t);
         g.gain.linearRampToValueAtTime(0.05 * v, t + 0.3); g.gain.linearRampToValueAtTime(0, t + 1.5);
         n.connect(bp); bp.connect(g); n.start(t); n.stop(t + 1.6); route(g, -0.5, 1.2);
       },
@@ -459,16 +612,30 @@
     };
     const LOW = { low: 1, gong: 1 };
     const BAL = { flying: 0.65, dragons: 0.7, travel: 0.75, water: 0.8, aliens: 0.85, animals: 1.6, dance: 1.2, school: 1.15 };   // even out loudness
-    function star(theme, level, at) {
-      const t = (at == null ? ac.currentTime : at) + 0.01, ch = currentChord(t);
+    // a star gets touched: an instant music-box ping, then (unless we are sweeping fast) its theme's sound
+    const STAR_GAIN = 1.7;
+    function touch(m, t, vol) {
+      const g = ac.createGain(); env(g, t, 0.003, vol, 1.5);
+      [[1, 1], [3.01, 0.22], [5.98, 0.05]].forEach(([r, a]) => {
+        const o = ac.createOscillator(), og = ac.createGain(); o.frequency.value = hz(m) * r; og.gain.value = a;
+        o.connect(og); og.connect(g); o.start(t); o.stop(t + 1.6);
+      });
+      route(g, 0, 1.2);
+    }
+    function star(theme, level, at, pan, light) {
+      const t = (at == null ? ac.currentTime : at) + 0.005, ch = currentChord(t);
       const hi = chordTones(ch, 67, 100), lo = chordTones(ch, 33, 52);
       const base = Math.max(0, Math.min(hi.length - 5, 3 + (level | 0)));     // rarer dreams sit higher
-      (STAR[theme] || STAR.none).forEach(([voice, step, d, v]) => {
+      toEcho = true; starPan = pan || 0;
+      touch(hi[Math.min(hi.length - 1, base + 2)], t, light ? 0.055 : 0.06);
+      if (!light) (STAR[theme] || STAR.none).forEach(([voice, step, d, v]) => {
         const list = LOW[voice] ? lo : hi, b = LOW[voice] ? 1 : base;
         const m = list[Math.max(0, Math.min(list.length - 1, b + step))];
-        toEcho = true; V[voice](m, t + d, v * (BAL[theme] || 1)); toEcho = false;
+        V[voice](m, t + d, v * STAR_GAIN * (BAL[theme] || 1));
       });
+      toEcho = false; starPan = 0;
     }
+
 
     // a hover chime that always fits the chord playing now (rare dreams ring higher)
     function chime(level) {
@@ -479,7 +646,7 @@
     }
     const setAir = () => airG.gain.setTargetAtTime(state.mode === "atmos" ? 0.003 : 0, ac.currentTime, 1.5);
     setAir();
-    return { master, scheduleUntil, chime, star, setIdle, twinkle: (pan, level) => { extTwinkles = true; twinkle(ac.currentTime + 0.02, pan, level); }, themes: Object.keys(STAR), currentChord, setMode: m => { state.mode = m; setAir(); }, get mode() { return state.mode; } };
+    return { master, scheduleUntil, chime, star, setIdle, setRegions, regionIds: Object.keys(REGION), _norm: NORM, twinkle: (pan, level) => { extTwinkles = true; twinkle(ac.currentTime + 0.02, pan, level); }, themes: Object.keys(STAR), currentChord, setMode: m => { state.mode = m; setAir(); }, get mode() { return state.mode; } };
   }
 
   // live helper for pages: start on a click, keeps itself scheduled

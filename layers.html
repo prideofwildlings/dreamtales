@@ -11,7 +11,7 @@
   <script src="layers-data.js?v=39"></script>
   <script src="dreams.js"></script>
   <script src="dream-themes.js?v=38"></script>
-  <script src="ambient-gris.js?v=3"></script>
+  <script src="ambient-gris.js?v=5"></script>
   <script src="sky-stars.js?v=38"></script>
   <style>
     body {
@@ -699,16 +699,56 @@
     });
 
     // a star sound when a new dream star is found under the cursor
-    let lastChime = -1, lastChimeAt = 0, lastPlay = performance.now(), spaceOpen = false;
+    let lastChime = -1, lastChimeAt = 0, lastFullAt = 0, lastPlay = performance.now(), spaceOpen = false;
     setInterval(() => {
       if (!soundOn || !audio || hovered < 0 || hovered === lastChime) { if (hovered < 0) lastChime = -1; return; }
       const now = performance.now();
-      if (now - lastChimeAt < 220) return;                 // sweeping across many stars stays gentle
+      if (now - lastChimeAt < 60) return;                  // even fast sweeps ring every star, like a harp
+      const sweeping = now - lastChimeAt < 170 || now - lastFullAt < 260;
       lastChime = hovered; lastChimeAt = now; lastPlay = now;
+      if (!sweeping) lastFullAt = now;
       const theme = st[hovered] < 0 ? "none" : themes[st[hovered]].id;
       const rare = st[hovered] < 0 ? 0 : Math.round((sa[hovered] - 0.5) * 8);
-      audio.eng.star(theme, rare);
-    }, 60);
+      const pan = sx[hovered] / W * 1.6 - 0.8;             // the sound comes from where the star sits
+      audio.eng.star(theme, rare, null, pan, sweeping);    // sweeping: a light touch; resting: the full theme sound
+    }, 25);
+
+    // every constellation is its own little universe: as the cursor drifts across the sky,
+    // the sound of the nearest constellations fades in and blends (horns and drums near the
+    // dragons, a stream by the water dreams, crickets and an owl among the animals...).
+    // Each patch's centre and size come from its own stars; clicking into one plays it fully.
+    let cursor = null, patches = null;
+    svg.on("mousemove.region", e => { cursor = d3.pointer(e, svg.node()); });
+    svg.on("mouseleave.region", () => { cursor = null; });
+    function findPatches() {
+      return themes.map((th, k) => {
+        let n = 0, mx = 0, my = 0;
+        for (let i = 0; i < N; i++) if (st[i] === k) { n++; mx += sx[i]; my += sy[i]; }
+        mx /= n; my /= n;
+        let vx = 0, vy = 0;
+        for (let i = 0; i < N; i++) if (st[i] === k) { vx += (sx[i] - mx) ** 2; vy += (sy[i] - my) ** 2; }
+        const sd = Math.sqrt(Math.sqrt(vx / n) * Math.sqrt(vy / n));
+        return { id: th.id, x: mx, y: my, r: Math.max(55, sd * 1.3 + 20) };
+      });
+    }
+    setInterval(() => {
+      if (!soundOn || !audio) return;
+      if (!patches) patches = findPatches();
+      const w = {};
+      if (focusK >= 0) w[themes[focusK].id] = 1;
+      else if (cursor) {
+        let sum = 0, top = 0;
+        const near = {};
+        for (const p of patches) {
+          const d2 = (cursor[0] - p.x) ** 2 + (cursor[1] - p.y) ** 2;
+          const v = Math.exp(-d2 / (2 * p.r * p.r));
+          if (v > 0.03) { near[p.id] = v; sum += v ** 3; top = Math.max(top, v); }
+        }
+        // the nearest universe leads; neighbours blend in only near the borders
+        for (const id in near) { const v = near[id] ** 3 / sum * Math.min(1, top * 1.25); if (v > 0.03) w[id] = v; }
+      }
+      audio.eng.setRegions(w);
+    }, 150);
 
     // when nobody plays for a few seconds, the sound opens into deep space:
     // a low hum, solar wind, a distant signal, and faraway stars twinkling.
