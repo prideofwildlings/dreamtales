@@ -401,8 +401,8 @@
         ev: (t, L) => { const c = tonesAt(t, 62, 74); [0, 1.3].forEach((d, j) => blip(L, t + d, hz(c[j % c.length]), { parts: BELL, lp: 2500, a: 0.04, dur: 5, pan: 0.5 }));
           if (Math.random() < 0.45) { const m = tonesAt(t, 67, 79); [0, 2, 1, 0].forEach((j, n) => blip(L, t + 4 + n * 0.36, hz(m[Math.min(j, m.length - 1)]), { type: "triangle", lp: 1800, a: 0.025, dur: 1.2, pan: -0.4 })); } } },
     };
-    const NORM = {house: 0.539, family: 0.543, school: 0.791, travel: 1.047, water: 0.358, love: 0.467, death: 0.222, falling: 0.586, flying: 0.361, dance: 0.454, animals: 1.172, chase: 0.436, fire: 0.486, storm: 0.491, sky: 1.024, moon: 0.585, monsters: 0.601, aliens: 1.893, dragons: 0.603, castle: 0.537};   // per-region loudness trims (measured)
-    const REG_LEVEL = 0.65;
+    const NORM = {house: 1.414, family: 0.634, school: 1.047, travel: 1.539, water: 0.595, love: 0.608, death: 0.408, falling: 0.869, flying: 0.51, dance: 0.578, animals: 2.306, chase: 1.015, fire: 0.901, storm: 0.617, sky: 1.211, moon: 0.774, monsters: 0.979, aliens: 1.919, dragons: 1.003, castle: 0.672};   // per-region loudness trims (measured)
+    const REG_LEVEL = 0.95;
     const regions = {};
     function makeRegion(id) {
       const spec = REGION[id]; if (!spec) return null;
@@ -613,7 +613,7 @@
     const LOW = { low: 1, gong: 1 };
     const BAL = { flying: 0.65, dragons: 0.7, travel: 0.75, water: 0.8, aliens: 0.85, animals: 1.6, dance: 1.2, school: 1.15 };   // even out loudness
     // a star gets touched: an instant music-box ping, then (unless we are sweeping fast) its theme's sound
-    const STAR_GAIN = 0.45;
+    const STAR_GAIN = 0.65;
     // The touch formula, like a wind chime: every star has its own note, taken from a
     // D-minor pentatonic scale (D F G A C: any of these sound fine together).
     // Higher stars ring higher, so gliding draws soft melodic lines instead of hammering one note;
@@ -633,7 +633,7 @@
       const now = ac.currentTime;
       while (recentTouches.length && recentTouches[0] < now - 1) recentTouches.shift();
       recentTouches.push(now);
-      vol /= 1 + 0.45 * (recentTouches.length - 1);     // many touches at once: each one softer
+      vol /= 1 + 0.22 * (recentTouches.length - 1);     // many touches at once: each one softer
       const g = ac.createGain(); env(g, t, 0.025, vol, 2.2);
       const lp = ac.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 2200;
       [[1, 1], [2, 0.07]].forEach(([r, a]) => {            // a pure, round tone: nothing sharp or metallic
@@ -641,7 +641,7 @@
         o.connect(og); og.connect(lp); o.start(t); o.stop(t + 2.3);
       });
       lp.connect(g);
-      route(g, 0, 2.8);                                // mostly reverb: it shimmers in the space, not in your ear
+      route(g, 0, 2.2);                                // mostly reverb: it shimmers in the space, not in your ear
     }
     // kind: "touch" = just a soft tuned touch (gliding across the sky)
     //       "bloom" = the theme's own sound (resting on a star)
@@ -653,7 +653,7 @@
       const hi = chordTones(ch, 67, 100), lo = chordTones(ch, 33, 52);
       const base = Math.max(0, Math.min(hi.length - 5, 3 + (level | 0)));     // rarer dreams sit higher
       toEcho = true; starPan = pan || 0;
-      if (!bloomOnly) touch(pos == null ? hi[Math.min(hi.length - 1, base)] : touchNote(pos, id | 0, t), t, (light ? 0.014 : 0.017) * vel);
+      if (!bloomOnly) touch(pos == null ? hi[Math.min(hi.length - 1, base)] : touchNote(pos, id | 0, t), t, (light ? 0.032 : 0.036) * vel);
       if (!light) (STAR[theme] || STAR.none).forEach(([voice, step, d, v]) => {
         const list = LOW[voice] ? lo : hi, b = LOW[voice] ? 1 : base;
         const m = list[Math.max(0, Math.min(list.length - 1, b + step))];
@@ -682,7 +682,7 @@
     const eng = create(ac, out, mode);
     eng.scheduleUntil(ac.currentTime + 6);
     const timer = setInterval(() => eng.scheduleUntil(ac.currentTime + 6), 1000);
-    out.gain.setTargetAtTime(0.65, ac.currentTime, 1.5);
+    out.gain.setTargetAtTime(0.85, ac.currentTime, 1.5);
     return { ac, out, eng, timer };
   }
   window.GrisAmbient = { create, start };
