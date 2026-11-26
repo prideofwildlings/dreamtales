@@ -11,7 +11,7 @@
   <script src="layers-data.js?v=39"></script>
   <script src="dreams.js"></script>
   <script src="dream-themes.js?v=38"></script>
-  <script src="ambient-gris.js?v=5"></script>
+  <script src="ambient-gris.js?v=7"></script>
   <script src="sky-stars.js?v=38"></script>
   <style>
     body {
@@ -699,18 +699,29 @@
     });
 
     // a star sound when a new dream star is found under the cursor
-    let lastChime = -1, lastChimeAt = 0, lastFullAt = 0, lastPlay = performance.now(), spaceOpen = false;
+    // One flow: gliding across the sky gives each star a soft, tuned touch;
+    // resting on a star lets its own character bloom (a drop for water, a gong for dragons...);
+    // stopping altogether lets deep space open up.
+    let lastChime = -1, lastChimeAt = 0, lastPlay = performance.now(), spaceOpen = false;
+    let restOn = -1, restSince = 0, bloomed = -1;
+    const starVoice = i => [st[i] < 0 ? "none" : themes[st[i]].id, st[i] < 0 ? 0 : Math.round((sa[i] - 0.5) * 8), sx[i] / W * 1.6 - 0.8];
     setInterval(() => {
-      if (!soundOn || !audio || hovered < 0 || hovered === lastChime) { if (hovered < 0) lastChime = -1; return; }
+      if (!soundOn || !audio) return;
       const now = performance.now();
-      if (now - lastChimeAt < 60) return;                  // even fast sweeps ring every star, like a harp
-      const sweeping = now - lastChimeAt < 170 || now - lastFullAt < 260;
-      lastChime = hovered; lastChimeAt = now; lastPlay = now;
-      if (!sweeping) lastFullAt = now;
-      const theme = st[hovered] < 0 ? "none" : themes[st[hovered]].id;
-      const rare = st[hovered] < 0 ? 0 : Math.round((sa[hovered] - 0.5) * 8);
-      const pan = sx[hovered] / W * 1.6 - 0.8;             // the sound comes from where the star sits
-      audio.eng.star(theme, rare, null, pan, sweeping);    // sweeping: a light touch; resting: the full theme sound
+      if (hovered < 0) { lastChime = -1; restOn = -1; return; }
+      if (hovered !== restOn) { restOn = hovered; restSince = now; bloomed = -1; }
+      if (hovered !== lastChime && now - lastChimeAt >= 60) {   // a soft touch for every star you pass
+        const gap = now - lastChimeAt;                     // fast sweeps touch more lightly, like a real instrument
+        const vel = Math.max(0.3, Math.min(1, (gap - 40) / 260));
+        lastChime = hovered; lastChimeAt = now; lastPlay = now;
+        const [th, rare, pan] = starVoice(hovered);
+        audio.eng.star(th, rare, null, pan, "touch", vel);
+      }
+      if (hovered === restOn && bloomed !== hovered && now - restSince > 320) {   // you stopped on it: it blooms
+        bloomed = hovered; lastPlay = now;
+        const [th, rare, pan] = starVoice(hovered);
+        audio.eng.star(th, rare, null, pan, "bloom");
+      }
     }, 25);
 
     // every constellation is its own little universe: as the cursor drifts across the sky,

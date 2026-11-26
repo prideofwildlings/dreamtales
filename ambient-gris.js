@@ -51,9 +51,9 @@
     // a soft echo that star sounds (and far-away notes) fall into
     const echo = ac.createDelay(3); echo.delayTime.value = 0.62;
     const eLp = ac.createBiquadFilter(); eLp.type = "lowpass"; eLp.frequency.value = 2400;
-    const eFb = ac.createGain(); eFb.gain.value = 0.42;
+    const eFb = ac.createGain(); eFb.gain.value = 0.3;
     echo.connect(eLp); eLp.connect(eFb); eFb.connect(echo);
-    const eOut = ac.createGain(); eOut.gain.value = 0.5; eLp.connect(eOut); eOut.connect(dry); eOut.connect(rev);
+    const eOut = ac.createGain(); eOut.gain.value = 0.38; eLp.connect(eOut); eOut.connect(dry); eOut.connect(rev);
     let toEcho = false, starPan = 0;
     function route(node, pan, send) {
       if (toEcho && starPan) pan = pan * 0.35 + starPan;       // star sounds come from where the star sits
@@ -269,14 +269,14 @@
       const bp = ac.createBiquadFilter(); bp.type = "bandpass"; bp.Q.value = 2;
       bp.frequency.setValueAtTime(hz(m) * 2, t); bp.frequency.exponentialRampToValueAtTime(hz(m) * 5, t + 7);
       const g = ac.createGain(); g.gain.setValueAtTime(0, t);
-      g.gain.linearRampToValueAtTime(0.014, t + 3); g.gain.linearRampToValueAtTime(0, t + 7.5);
+      g.gain.linearRampToValueAtTime(0.017, t + 3); g.gain.linearRampToValueAtTime(0, t + 7.5);
       o.connect(bp); bp.connect(g); o.start(t); o.stop(t + 7.6);
-      toIdle(g, Math.random() * 1.2 - 0.6);
+      route(g, Math.random() * 1.2 - 0.6, 2.2);              // the whistle drifts through always, not only in deep space
     }
-    let tTw = ac.currentTime + 1, tSig = ac.currentTime + 12, extTwinkles = false;
+    let tTw = ac.currentTime + 1, tSig = ac.currentTime + 6, extTwinkles = false;
     function scheduleSpace(until) {
       if (!extTwinkles) while (tTw < until) { twinkle(tTw); tTw += 0.6 + Math.random() * 1.8; }
-      while (tSig < until) { signal(tSig); tSig += 22 + Math.random() * 25; }
+      while (tSig < until) { signal(tSig); tSig += 13 + Math.random() * 14; }
     }
     function setIdle(on) {
       const now = ac.currentTime;
@@ -613,21 +613,26 @@
     const LOW = { low: 1, gong: 1 };
     const BAL = { flying: 0.65, dragons: 0.7, travel: 0.75, water: 0.8, aliens: 0.85, animals: 1.6, dance: 1.2, school: 1.15 };   // even out loudness
     // a star gets touched: an instant music-box ping, then (unless we are sweeping fast) its theme's sound
-    const STAR_GAIN = 1.7;
+    const STAR_GAIN = 0.6;
     function touch(m, t, vol) {
-      const g = ac.createGain(); env(g, t, 0.003, vol, 1.5);
-      [[1, 1], [3.01, 0.22], [5.98, 0.05]].forEach(([r, a]) => {
+      const g = ac.createGain(); env(g, t, 0.012, vol, 1.8);
+      [[1, 1], [3.01, 0.14], [5.98, 0.03]].forEach(([r, a]) => {
         const o = ac.createOscillator(), og = ac.createGain(); o.frequency.value = hz(m) * r; og.gain.value = a;
         o.connect(og); og.connect(g); o.start(t); o.stop(t + 1.6);
       });
-      route(g, 0, 1.2);
+      route(g, 0, 2.6);                                // mostly reverb: it shimmers in the space, not in your ear
     }
-    function star(theme, level, at, pan, light) {
+    // kind: "touch" = just a soft tuned touch (gliding across the sky)
+    //       "bloom" = the theme's own sound (resting on a star)
+    //       anything else = both
+    function star(theme, level, at, pan, kind, vel) {
+      vel = vel == null ? 1 : vel;                     // gentle motion, gentle notes
+      const light = kind === true || kind === "touch", bloomOnly = kind === "bloom";
       const t = (at == null ? ac.currentTime : at) + 0.005, ch = currentChord(t);
       const hi = chordTones(ch, 67, 100), lo = chordTones(ch, 33, 52);
       const base = Math.max(0, Math.min(hi.length - 5, 3 + (level | 0)));     // rarer dreams sit higher
       toEcho = true; starPan = pan || 0;
-      touch(hi[Math.min(hi.length - 1, base + 2)], t, light ? 0.055 : 0.06);
+      if (!bloomOnly) touch(hi[Math.min(hi.length - 1, base + 2)], t, (light ? 0.018 : 0.022) * vel);
       if (!light) (STAR[theme] || STAR.none).forEach(([voice, step, d, v]) => {
         const list = LOW[voice] ? lo : hi, b = LOW[voice] ? 1 : base;
         const m = list[Math.max(0, Math.min(list.length - 1, b + step))];
