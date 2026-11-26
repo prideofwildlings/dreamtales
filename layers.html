@@ -569,14 +569,16 @@
       []
     ];
 
-    // SMOKE BREATH: a little flame, then storybook smoke rolls out over the dark sky (frames smoke2-1..5.png).
+    // FIRE BREATH: a storybook flame bursts from the mouth (frames flame2-1..8.png).
     // [picture, x, y, width, opacity] — x/y from the mouth, in collage pixels
-    // storybook smoke (Over the Garden Wall-ish): curly gouache flame tongues, then billowing smoke
-    // with an ink outline and engraved spiral curls, ochre near the fire cooling to grey, paper embers.
-    const SW = 200, SH = SW * 420 / 360;                    // frame size; the mouth sits near the bottom-left
+    // a storybook flame (Over the Garden Wall-ish): ragged gouache tongues with ink outlines that
+    // spark, swell into a wide burst, flicker, shrink and pop into little paper embers. No smoke.
+    const SW = 250, SH = SW * 420 / 360;                    // frame size; the mouth sits near the bottom-left
     const at = [-SW * 0.18, -SH * 0.86];
-    const breath = [1, 2, 3, 4, 5].map(n => [[`smoke2-${n}.png`, at[0], at[1], SW, 1]]).concat([[]]);
-    const sequence = [0, 1, 2, 3, 3, 4, 4, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5];
+    const breath = [1, 2, 3, 4, 5, 6, 7, 8].map(n => [[`flame2-${n}.png`, at[0], at[1], SW, 1]]).concat([[]]);
+    breath.forEach(f => f.length && (new Image().src = f[0][0]));      // load early, no flicker
+    //               spark grow BURST flicker....... shrink pop   then a quiet pause
+    const sequence = [0, 1, 2, 3, 4, 5, 4, 3, 5, 6, 7, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8];
 
     const dragonGroup = pieces.filter(d => d.name === "dragon");
     const flame = dragonGroup.select(".art").append("g")
@@ -592,7 +594,7 @@
       if (!parts.length) { puffImg.attr("href", null); breathLines.selectAll("*").remove(); return; }
       const [src, x, y, w, op] = parts[0];
       puffImg.attr("href", src).attr("x", x).attr("y", y).attr("width", w).attr("opacity", op)
-        .attr("transform", "rotate(62)");                    // smoke leans forward, out over the dark sky
+        .attr("transform", "rotate(62)");                    // the flame leans forward, out over the dark sky
       breathLines.selectAll("*").remove();
     }
 
@@ -642,7 +644,7 @@
     // a stitched felt heart painted in gouache, like a patch sewn on his shirt (Over the Garden Wall-ish):
     // three hand-painted frames swap about 6 times a second, so it beats with a little wobble
     const HEART_FRAMES = ["heart-felt-0.png", "heart-felt-1.png", "heart-felt-2.png"];
-    HEART_FRAMES.concat([1, 2, 3, 4, 5].map(n => `smoke2-${n}.png`)).forEach(src => { new Image().src = src; });   // load early, no flicker
+    HEART_FRAMES.forEach(src => { new Image().src = src; });   // load early, no flicker
     const heartImg = heart.append("image").attr("href", HEART_FRAMES[0])
       .attr("x", -21.7).attr("y", -29.2).attr("width", 45.5).attr("height", 45.5);
 
