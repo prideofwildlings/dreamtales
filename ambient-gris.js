@@ -56,7 +56,7 @@
     const eOut = ac.createGain(); eOut.gain.value = 0.38; eLp.connect(eOut); eOut.connect(dry); eOut.connect(rev);
     let toEcho = false, starPan = 0;
     function route(node, pan, send) {
-      if (toEcho && starPan) pan = pan * 0.35 + starPan;       // star sounds come from where the star sits
+      if (starPan) pan = pan * 0.35 + starPan;       // star sounds come from where the star sits
       const p = ac.createStereoPanner(); p.pan.value = Math.max(-0.85, Math.min(0.85, pan));
       node.connect(p); p.connect(dry);
       if (toEcho) p.connect(echo);
@@ -269,7 +269,7 @@
       const bp = ac.createBiquadFilter(); bp.type = "bandpass"; bp.Q.value = 2;
       bp.frequency.setValueAtTime(hz(m) * 2, t); bp.frequency.exponentialRampToValueAtTime(hz(m) * 5, t + 7);
       const g = ac.createGain(); g.gain.setValueAtTime(0, t);
-      g.gain.linearRampToValueAtTime(0.02, t + 3); g.gain.linearRampToValueAtTime(0, t + 7.5);
+      g.gain.linearRampToValueAtTime(0.017, t + 3); g.gain.linearRampToValueAtTime(0, t + 7.5);
       o.connect(bp); bp.connect(g); o.start(t); o.stop(t + 7.6);
       route(g, Math.random() * 1.2 - 0.6, 2.2);              // the whistle drifts through always, not only in deep space
     }
@@ -401,8 +401,8 @@
         ev: (t, L) => { const c = tonesAt(t, 62, 74); [0, 1.3].forEach((d, j) => blip(L, t + d, hz(c[j % c.length]), { parts: BELL, lp: 2500, a: 0.04, dur: 5, pan: 0.5 }));
           if (Math.random() < 0.45) { const m = tonesAt(t, 67, 79); [0, 2, 1, 0].forEach((j, n) => blip(L, t + 4 + n * 0.36, hz(m[Math.min(j, m.length - 1)]), { type: "triangle", lp: 1800, a: 0.025, dur: 1.2, pan: -0.4 })); } } },
     };
-    const NORM = {house: 1.414, family: 0.634, school: 1.047, travel: 1.539, water: 0.595, love: 0.608, death: 0.408, falling: 0.869, flying: 0.51, dance: 0.578, animals: 2.306, chase: 1.015, fire: 0.901, storm: 0.617, sky: 1.211, moon: 0.774, monsters: 0.979, aliens: 1.919, dragons: 1.003, castle: 0.672};   // per-region loudness trims (measured)
-    const REG_LEVEL = 0.95;
+    const NORM = {house: 0.539, family: 0.543, school: 0.791, travel: 1.047, water: 0.358, love: 0.467, death: 0.222, falling: 0.586, flying: 0.361, dance: 0.454, animals: 1.172, chase: 0.436, fire: 0.486, storm: 0.491, sky: 1.024, moon: 0.585, monsters: 0.601, aliens: 1.893, dragons: 0.603, castle: 0.537};   // per-region loudness trims (measured)   // per-region loudness trims (measured)
+    const REG_LEVEL = 1;
     const regions = {};
     function makeRegion(id) {
       const spec = REGION[id]; if (!spec) return null;
@@ -452,7 +452,7 @@
       events.push([t0, ch]);
       const low = chordTones(ch, 50, 69);
       pad([ch.bass + 12, low[0], low[1], low[2]].filter(Boolean), Math.max(0, t0 - 1), B + 5, 0.0018);
-      if (Math.random() < 0.6) hum(nearest(chordTones(ch, 55, 64), 59), t0 + 1 + Math.random() * 2, 7, 0.0034);
+      if (Math.random() < 0.45) hum(nearest(chordTones(ch, 55, 64), 59), t0 + 1 + Math.random() * 2, 7, 0.0025);
       if (Math.random() < 0.5) shimmer(chordTones(ch, 86, 98).slice(0, 3), t0 + Math.random() * 3, 0.0009);
       if (Math.random() < 0.35) {
         const hi = chordTones(ch, 72, 86);
@@ -613,35 +613,48 @@
     const LOW = { low: 1, gong: 1 };
     const BAL = { flying: 0.65, dragons: 0.7, travel: 0.75, water: 0.8, aliens: 0.85, animals: 1.6, dance: 1.2, school: 1.15 };   // even out loudness
     // a star gets touched: an instant music-box ping, then (unless we are sweeping fast) its theme's sound
-    const STAR_GAIN = 0.65;
-    // The touch formula, like a wind chime: every star has its own note, taken from a
-    // D-minor pentatonic scale (D F G A C: any of these sound fine together).
-    // Higher stars ring higher, so gliding draws soft melodic lines instead of hammering one note;
-    // the same note never repeats twice in a row; and the more stars you touch at once,
-    // the quieter each touch gets, so a fast sweep stays a soft shimmer.
-    const PENTA = []; for (let m = 62; m <= 86; m++) if ([2, 5, 7, 9, 0].includes(m % 12)) PENTA.push(m);
+    const STAR_GAIN = 0.6;
+    // The touch: a soft menu "tok", like moving between options on a game console's menu,
+    // but warm and watery: a short round tone that dips a little in pitch, a breath of air,
+    // a touch of reverb. It sits in the low-middle, never piercing. Each star's tok is tuned
+    // a little differently (a narrow D-minor pentatonic band, never the same twice in a row),
+    // and the more stars you pass in a second, the softer each one gets.
+    const PENTA = []; for (let m = 62; m <= 74; m++) if ([2, 5, 7, 9, 0].includes(m % 12)) PENTA.push(m);
     let lastTouchNote = -1; const recentTouches = [];
     function touchNote(pos, id, t) {
       let k = Math.round(Math.max(0, Math.min(1, pos)) * (PENTA.length - 1)) + ((id * 7919) % 3) - 1;
       k = Math.max(0, Math.min(PENTA.length - 1, k));
       if (PENTA[k] === lastTouchNote) k += k < PENTA.length - 1 ? 1 : -1;
       let m = PENTA[k];
-      if (m % 12 === 0 && currentChord(t).pcs.includes(1)) m += 1;     // over an A chord, C becomes C#
+      if (m % 12 === 0 && currentChord(t).pcs.includes(1)) m += 1;
       lastTouchNote = PENTA[k]; return m;
     }
     function touch(m, t, vol) {
       const now = ac.currentTime;
       while (recentTouches.length && recentTouches[0] < now - 1) recentTouches.shift();
       recentTouches.push(now);
-      vol /= 1 + 0.22 * (recentTouches.length - 1);     // many touches at once: each one softer
-      const g = ac.createGain(); env(g, t, 0.025, vol, 2.2);
-      const lp = ac.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 2200;
-      [[1, 1], [2, 0.07]].forEach(([r, a]) => {            // a pure, round tone: nothing sharp or metallic
-        const o = ac.createOscillator(), og = ac.createGain(); o.frequency.value = hz(m) * r; og.gain.value = a;
-        o.connect(og); og.connect(lp); o.start(t); o.stop(t + 2.3);
-      });
-      lp.connect(g);
-      route(g, 0, 2.2);                                // mostly reverb: it shimmers in the space, not in your ear
+      vol /= 1 + 0.2 * (recentTouches.length - 1);
+      const f = hz(m + 12);                                   // body around 600-1200 Hz
+      // the round "tok"
+      const g = ac.createGain(); g.gain.value = 0;
+      g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol, t + 0.006);
+      g.gain.exponentialRampToValueAtTime(vol * 0.25, t + 0.06);
+      g.gain.exponentialRampToValueAtTime(0.00001, t + 0.32);
+      const o = ac.createOscillator(); o.type = "sine";
+      o.frequency.setValueAtTime(f * 1.5, t); o.frequency.exponentialRampToValueAtTime(f, t + 0.035);
+      const o2 = ac.createOscillator(); o2.type = "triangle";        // a little woody body underneath
+      o2.frequency.setValueAtTime(f * 0.5 * 1.3, t); o2.frequency.exponentialRampToValueAtTime(f * 0.5, t + 0.04);
+      const g2 = ac.createGain(); g2.gain.value = 0.35;
+      const lp = ac.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 2400; lp.Q.value = 0.5;
+      o.connect(lp); o2.connect(g2); g2.connect(lp); lp.connect(g);
+      o.start(t); o2.start(t); o.stop(t + 0.35); o2.stop(t + 0.35);
+      // a breath of air on top
+      const n = noiseSrc(1), bp = ac.createBiquadFilter(), ng = ac.createGain();
+      bp.type = "bandpass"; bp.frequency.value = 3800; bp.Q.value = 1.2;
+      ng.gain.value = 0; ng.gain.setValueAtTime(0, t); ng.gain.linearRampToValueAtTime(vol * 0.18, t + 0.004);
+      ng.gain.exponentialRampToValueAtTime(0.00001, t + 0.07);
+      n.connect(bp); bp.connect(ng); ng.connect(g); n.start(t, Math.random() * 3); n.stop(t + 0.1);
+      route(g, 0, 0.9);                                       // a little room around it, like water
     }
     // kind: "touch" = just a soft tuned touch (gliding across the sky)
     //       "bloom" = the theme's own sound (resting on a star)
@@ -652,8 +665,9 @@
       const t = (at == null ? ac.currentTime : at) + 0.005, ch = currentChord(t);
       const hi = chordTones(ch, 67, 100), lo = chordTones(ch, 33, 52);
       const base = Math.max(0, Math.min(hi.length - 5, 3 + (level | 0)));     // rarer dreams sit higher
-      toEcho = true; starPan = pan || 0;
-      if (!bloomOnly) touch(pos == null ? hi[Math.min(hi.length - 1, base)] : touchNote(pos, id | 0, t), t, (light ? 0.032 : 0.036) * vel);
+      starPan = pan || 0; toEcho = false;               // the tok stays dry-ish: no repeating echo
+      if (!bloomOnly) touch(pos == null ? PENTA[2] : touchNote(pos, id | 0, t), t, (light ? 0.08 : 0.09) * vel);
+      toEcho = true;
       if (!light) (STAR[theme] || STAR.none).forEach(([voice, step, d, v]) => {
         const list = LOW[voice] ? lo : hi, b = LOW[voice] ? 1 : base;
         const m = list[Math.max(0, Math.min(list.length - 1, b + step))];
@@ -682,7 +696,7 @@
     const eng = create(ac, out, mode);
     eng.scheduleUntil(ac.currentTime + 6);
     const timer = setInterval(() => eng.scheduleUntil(ac.currentTime + 6), 1000);
-    out.gain.setTargetAtTime(0.85, ac.currentTime, 1.5);
+    out.gain.setTargetAtTime(0.9, ac.currentTime, 1.5);
     return { ac, out, eng, timer };
   }
   window.GrisAmbient = { create, start };
