@@ -11,7 +11,7 @@
   <script src="layers-data.js?v=39"></script>
   <script src="dreams.js"></script>
   <script src="dream-themes.js?v=38"></script>
-  <script src="ambient-gris.js?v=7"></script>
+  <script src="ambient-gris.js?v=8"></script>
   <script src="sky-stars.js?v=38"></script>
   <style>
     body {
@@ -693,7 +693,7 @@
       if (soundOn && !audio) audio = GrisAmbient.start("atmos");
       if (audio) {
         audio.ac.resume();
-        audio.out.gain.setTargetAtTime(soundOn ? 0.9 : 0, audio.ac.currentTime, 0.6);
+        audio.out.gain.setTargetAtTime(soundOn ? 0.65 : 0, audio.ac.currentTime, 0.6);
       }
       d3.select("#sound").html(soundOn ? "&#9835; sound on" : "&#9835; sound off");
     });
@@ -715,7 +715,7 @@
         const vel = Math.max(0.3, Math.min(1, (gap - 40) / 260));
         lastChime = hovered; lastChimeAt = now; lastPlay = now;
         const [th, rare, pan] = starVoice(hovered);
-        audio.eng.star(th, rare, null, pan, "touch", vel);
+        audio.eng.star(th, rare, null, pan, "touch", vel, 0.7 * (1 - sy[hovered] / 900) + 0.3 * sx[hovered] / W, hovered);   // higher and further right = higher note
       }
       if (hovered === restOn && bloomed !== hovered && now - restSince > 320) {   // you stopped on it: it blooms
         bloomed = hovered; lastPlay = now;
