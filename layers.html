@@ -11,7 +11,7 @@
   <script src="layers-data.js?v=39"></script>
   <script src="dreams.js"></script>
   <script src="dream-themes.js?v=38"></script>
-  <script src="ambient-gris.js?v=2"></script>
+  <script src="ambient-gris.js?v=3"></script>
   <script src="sky-stars.js?v=38"></script>
   <style>
     body {
@@ -699,16 +699,35 @@
     });
 
     // a star sound when a new dream star is found under the cursor
-    let lastChime = -1, lastChimeAt = 0;
+    let lastChime = -1, lastChimeAt = 0, lastPlay = performance.now(), spaceOpen = false;
     setInterval(() => {
       if (!soundOn || !audio || hovered < 0 || hovered === lastChime) { if (hovered < 0) lastChime = -1; return; }
       const now = performance.now();
       if (now - lastChimeAt < 220) return;                 // sweeping across many stars stays gentle
-      lastChime = hovered; lastChimeAt = now;
+      lastChime = hovered; lastChimeAt = now; lastPlay = now;
       const theme = st[hovered] < 0 ? "none" : themes[st[hovered]].id;
       const rare = st[hovered] < 0 ? 0 : Math.round((sa[hovered] - 0.5) * 8);
       audio.eng.star(theme, rare);
     }, 60);
+
+    // when nobody plays for a few seconds, the sound opens into deep space:
+    // a low hum, solar wind, a distant signal, and faraway stars twinkling.
+    // Each twinkle comes from a real bright star: you hear it where it sits,
+    // and you see it flare for a moment.
+    const flashes = [];                                    // [star index, start time]
+    setInterval(() => {
+      if (!soundOn || !audio) return;
+      const idle = performance.now() - lastPlay > 3500;
+      if (idle !== spaceOpen) { spaceOpen = idle; audio.eng.setIdle(idle); }
+    }, 400);
+    (function twinkleLoop() {
+      if (soundOn && audio && spaceOpen && typeof brightStars !== "undefined" && brightStars.length) {
+        const i = brightStars[Math.floor(Math.random() * brightStars.length)];
+        audio.eng.twinkle(sx[i] / W * 1.8 - 0.9, Math.round((sa[i] - 0.8) * 4));
+        flashes.push([i, performance.now()]);
+      }
+      setTimeout(twinkleLoop, 700 + Math.random() * 1900);
+    })();
 
 
     // ---------- 15. THE SLEEPER: a deep, floating sleep ----------
@@ -1188,6 +1207,14 @@
         if (focusK >= 0 && st[i] !== focusK && i !== hovered) continue;
         const k = i === hovered ? 22 : sr[i] * 5;
         ctx.globalAlpha = i === hovered ? 1 : 0.35 + 0.3 * Math.sin(t * ss[i] + sp[i]);
+        ctx.drawImage(glow, sx[i] - k / 2, sy[i] - k / 2, k, k);
+      }
+      // the faraway stars you hear twinkling flare softly for a moment
+      const nowMs = performance.now();
+      while (flashes.length && nowMs - flashes[0][1] > 1600) flashes.shift();
+      for (const [i, t0] of flashes) {
+        const age = (nowMs - t0) / 1600, k = sr[i] * 5 + 16 * Math.sin(Math.PI * Math.min(1, age * 1.4));
+        ctx.globalAlpha = 0.85 * Math.pow(1 - age, 1.6);
         ctx.drawImage(glow, sx[i] - k / 2, sy[i] - k / 2, k, k);
       }
       ctx.globalAlpha = 1;

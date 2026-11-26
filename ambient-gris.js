@@ -218,6 +218,71 @@
       });
     }
 
+
+    // ---------- deep space (fades in when nobody is playing the stars) ----------
+    const idleG = ac.createGain(); idleG.gain.value = 0;
+    idleG.connect(master);
+    const idleSend = ac.createGain(); idleSend.gain.value = 1.2; idleG.connect(idleSend); idleSend.connect(rev);
+    function toIdle(node, pan) {
+      const p = ac.createStereoPanner(); p.pan.value = Math.max(-0.95, Math.min(0.95, pan));
+      node.connect(p); p.connect(idleG);
+    }
+    // a low hum on D and A that slowly beats, like distance itself
+    {
+      const lp = ac.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 260; lp.Q.value = 0.3;
+      const hg = ac.createGain(); hg.gain.value = 0.0055;
+      const swell = ac.createOscillator(); swell.frequency.value = 0.05;
+      const sw = ac.createGain(); sw.gain.value = 0.0028; swell.connect(sw); sw.connect(hg.gain); swell.start();
+      [[73.42, 1], [73.72, 0.8], [110.0, 0.5], [110.35, 0.4], [146.83, 0.18]].forEach(([f, a]) => {
+        const o = ac.createOscillator(), og = ac.createGain(); o.frequency.value = f; og.gain.value = a;
+        o.connect(og); og.connect(lp); o.start();
+      });
+      lp.connect(hg); toIdle(hg, 0);
+    }
+    // solar wind: wide, slow, darker than the air
+    for (let c = 0; c < 2; c++) {
+      const n = ac.createBufferSource(); n.buffer = abuf; n.loop = true; n.playbackRate.value = 0.5 + c * 0.13;
+      const lp = ac.createBiquadFilter(); lp.type = "lowpass"; lp.Q.value = 1.2; lp.frequency.value = 380;
+      const l = ac.createOscillator(); l.frequency.value = 0.021 + c * 0.013;
+      const la = ac.createGain(); la.gain.value = 260; l.connect(la); la.connect(lp.frequency); l.start();
+      const g = ac.createGain(); g.gain.value = 0.0045;
+      const gl = ac.createOscillator(); gl.frequency.value = 0.04 + c * 0.017;
+      const gla = ac.createGain(); gla.gain.value = 0.0035; gl.connect(gla); gla.connect(g.gain); gl.start();
+      n.connect(lp); lp.connect(g); toIdle(g, c ? 0.8 : -0.8); n.start();
+    }
+    // a faraway star twinkling: tiny, high, short, mostly reverb
+    function twinkle(t, pan, level) {
+      const ch = currentChord(t), hi = chordTones(ch, 88, 108);
+      const m = hi[Math.max(0, Math.min(hi.length - 1, Math.floor(Math.random() * 4) + (level | 0)))];
+      const g = ac.createGain(); env(g, t, 0.01, 0.022 + Math.random() * 0.016, 1.1);
+      const o = ac.createOscillator(); o.frequency.value = hz(m);
+      o.connect(g); o.start(t); o.stop(t + 1);
+      toIdle(g, pan == null ? Math.random() * 1.8 - 0.9 : pan);
+    }
+    // a distant signal: a soft tone gliding slowly up and dissolving
+    function signal(t) {
+      const lo = chordTones(currentChord(t), 57, 69), m = lo[Math.floor(Math.random() * lo.length)];
+      const o = ac.createOscillator(); o.type = "triangle";
+      o.frequency.setValueAtTime(hz(m), t); o.frequency.exponentialRampToValueAtTime(hz(m + 12), t + 7);
+      wobAmt.connect(o.detune);
+      const bp = ac.createBiquadFilter(); bp.type = "bandpass"; bp.Q.value = 2;
+      bp.frequency.setValueAtTime(hz(m) * 2, t); bp.frequency.exponentialRampToValueAtTime(hz(m) * 5, t + 7);
+      const g = ac.createGain(); g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.014, t + 3); g.gain.linearRampToValueAtTime(0, t + 7.5);
+      o.connect(bp); bp.connect(g); o.start(t); o.stop(t + 7.6);
+      toIdle(g, Math.random() * 1.2 - 0.6);
+    }
+    let tTw = ac.currentTime + 1, tSig = ac.currentTime + 12, extTwinkles = false;
+    function scheduleSpace(until) {
+      if (!extTwinkles) while (tTw < until) { twinkle(tTw); tTw += 0.6 + Math.random() * 1.8; }
+      while (tSig < until) { signal(tSig); tSig += 22 + Math.random() * 25; }
+    }
+    function setIdle(on) {
+      const now = ac.currentTime;
+      idleG.gain.cancelScheduledValues(now);
+      idleG.gain.setTargetAtTime(on ? 1 : 0, now, on ? 2.2 : 0.5);    // slow to open, quick to step back
+    }
+
     // ---- the composer ----
     const BAR = 4.6, BEAT = BAR / 4;
     let tNext = ac.currentTime + 0.3, phraseNo = 0, mel = 74;
@@ -291,7 +356,7 @@
       phraseNo++;
       return t0 + 4 * BAR + (last ? BAR : 0);              // breathe: a silent bar after every 4th phrase
     }
-    function scheduleUntil(t) { while (tNext < t) tNext = phrase(tNext); }
+    function scheduleUntil(t) { while (tNext < t) tNext = phrase(tNext); scheduleSpace(t); }
     function currentChord(at) {
       const now = at == null ? ac.currentTime : at; let c = CH.Dm9;
       for (const [t, ch] of events) if (t <= now) c = ch;
@@ -414,7 +479,7 @@
     }
     const setAir = () => airG.gain.setTargetAtTime(state.mode === "atmos" ? 0.003 : 0, ac.currentTime, 1.5);
     setAir();
-    return { master, scheduleUntil, chime, star, themes: Object.keys(STAR), currentChord, setMode: m => { state.mode = m; setAir(); }, get mode() { return state.mode; } };
+    return { master, scheduleUntil, chime, star, setIdle, twinkle: (pan, level) => { extTwinkles = true; twinkle(ac.currentTime + 0.02, pan, level); }, themes: Object.keys(STAR), currentChord, setMode: m => { state.mode = m; setAir(); }, get mode() { return state.mode; } };
   }
 
   // live helper for pages: start on a click, keeps itself scheduled
