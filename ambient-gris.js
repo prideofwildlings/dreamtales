@@ -197,12 +197,119 @@
       return t0 + 4 * BAR + (last ? BAR : 0);              // breathe: a silent bar after every 4th phrase
     }
     function scheduleUntil(t) { while (tNext < t) tNext = phrase(tNext); }
-    function currentChord() {
-      const now = ac.currentTime; let c = CH.Dm9;
+    function currentChord(at) {
+      const now = at == null ? ac.currentTime : at; let c = CH.Dm9;
       for (const [t, ch] of events) if (t <= now) c = ch;
       while (events.length > 40) events.shift();
       return c;
     }
+
+    // ---------- star voices: every dream theme has its own small sound ----------
+    const nlong = ac.createBuffer(1, ac.sampleRate * 1.6, ac.sampleRate);
+    { const d = nlong.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; }
+    function env(g, t, a, peak, dur) {
+      g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(peak, t + a);
+      g.gain.exponentialRampToValueAtTime(0.00001, t + dur);
+    }
+    function partials(m, t, vol, dur, list, pan, send, attack) {   // list: [ratio, amp, decayScale]
+      const g = ac.createGain(); env(g, t, attack || 0.004, vol, dur);
+      list.forEach(([r, a, k]) => {
+        const o = ac.createOscillator(), og = ac.createGain();
+        o.frequency.value = hz(m) * r;
+        og.gain.setValueAtTime(a, t); og.gain.exponentialRampToValueAtTime(0.0001, t + dur * (k || 1));
+        o.connect(og); og.connect(g); o.start(t); o.stop(t + dur + 0.1);
+      });
+      route(g, pan, send); return g;
+    }
+    const V = {
+      piano:   (m, t, v) => piano(m, t, 0.34 * v),
+      low:     (m, t, v) => piano(m, t, 0.4 * v),
+      celesta: (m, t, v) => celesta(m, t, 0.055 * v),
+      harp:    (m, t, v) => {                                   // plucked string
+        const lp = ac.createBiquadFilter(); lp.type = "lowpass";
+        lp.frequency.setValueAtTime(3200, t); lp.frequency.exponentialRampToValueAtTime(500, t + 1);
+        const g = ac.createGain(); env(g, t, 0.003, 0.07 * v, 2.6);
+        const o = ac.createOscillator(); o.type = "triangle"; o.frequency.value = hz(m);
+        const o2 = ac.createOscillator(); o2.frequency.value = hz(m) * 2; const g2 = ac.createGain(); g2.gain.value = 0.3;
+        o.connect(lp); o2.connect(g2); g2.connect(lp); lp.connect(g);
+        o.start(t); o2.start(t); o.stop(t + 2.7); o2.stop(t + 2.7); route(g, -0.3, 1.3);
+      },
+      marimba: (m, t, v) => partials(m, t, 0.09 * v, 0.8, [[1, 1, 1], [4, 0.35, 0.2], [10, 0.08, 0.08]], 0.2, 0.7),
+      bell:    (m, t, v) => partials(m, t, 0.045 * v, 4, [[1, 1, 1], [2.76, 0.45, 0.6], [5.4, 0.22, 0.4], [8.93, 0.1, 0.25]], 0.35, 1.5),
+      glass:   (m, t, v) => partials(m, t, 0.04 * v, 5, [[1, 1, 1], [2, 0.3, 0.8], [3, 0.15, 0.6]], 0.5, 2, 0.06),
+      gong:    (m, t, v) => partials(m, t, 0.07 * v, 5, [[1, 1, 1], [1.48, 0.5, 0.8], [2.13, 0.35, 0.6], [3.1, 0.2, 0.4]], -0.2, 1.4, 0.02),
+      drop:    (m, t, v) => {                                   // a water drop: a note that bends down a little
+        const g = ac.createGain(); env(g, t, 0.003, 0.06 * v, 1.6);
+        const o = ac.createOscillator(); o.frequency.setValueAtTime(hz(m) * 1.06, t);
+        o.frequency.exponentialRampToValueAtTime(hz(m), t + 0.12);
+        o.connect(g); o.start(t); o.stop(t + 1.7); route(g, -0.4, 2.2);
+      },
+      choir:   (m, t, v) => choir(m, t, 0.7, 0.06 * v),
+      ghost:   (m, t, v) => {                                   // a wobbly, slightly out-of-tune voice
+        choir(m, t, 0.9, 0.05 * v);
+        const g = ac.createGain(); env(g, t, 0.4, 0.02 * v, 2.6);
+        const o = ac.createOscillator(); o.frequency.value = hz(m) * 1.012;
+        const w = ac.createOscillator(); w.frequency.value = 3; const wg = ac.createGain(); wg.gain.value = 18;
+        w.connect(wg); wg.connect(o.detune); o.connect(g); o.start(t); w.start(t); o.stop(t + 2.7); w.stop(t + 2.7);
+        route(g, 0.5, 2);
+      },
+      theremin:(m, t, v) => {                                   // a sliding sine with vibrato
+        const g = ac.createGain(); g.gain.setValueAtTime(0, t);
+        g.gain.linearRampToValueAtTime(0.035 * v, t + 0.25); g.gain.linearRampToValueAtTime(0, t + 1.6);
+        const o = ac.createOscillator(); o.frequency.setValueAtTime(hz(m) * 0.84, t);
+        o.frequency.exponentialRampToValueAtTime(hz(m), t + 0.35);
+        const w = ac.createOscillator(); w.frequency.value = 6; const wg = ac.createGain(); wg.gain.value = 14;
+        w.connect(wg); wg.connect(o.detune); o.connect(g); o.start(t); w.start(t); o.stop(t + 1.7); w.stop(t + 1.7);
+        route(g, 0.3, 1.8);
+      },
+      swish:   (m, t, v) => {                                   // wind / rain brushing past
+        const n = ac.createBufferSource(); n.buffer = nlong;
+        const bp = ac.createBiquadFilter(); bp.type = "bandpass"; bp.Q.value = 0.8;
+        bp.frequency.setValueAtTime(1600, t); bp.frequency.exponentialRampToValueAtTime(350, t + 1.4);
+        const g = ac.createGain(); g.gain.setValueAtTime(0, t);
+        g.gain.linearRampToValueAtTime(0.05 * v, t + 0.3); g.gain.linearRampToValueAtTime(0, t + 1.5);
+        n.connect(bp); bp.connect(g); n.start(t); n.stop(t + 1.6); route(g, -0.5, 1.2);
+      },
+      tick:    (m, t, v) => piano(m, t, 0.2 * v),
+    };
+    // [voice, step along the chord (0 = the star's own note), delay in seconds, loudness]
+    // "low" voices use the bass register; the rest sit above the music
+    const STAR = {
+      house:    [["piano", 0, 0, 1]],                                            // home: one warm piano note
+      family:   [["piano", 0, 0, 0.9], ["piano", -1, 0.03, 0.7]],                 // two notes together
+      school:   [["celesta", 0, 0, 1]],                                          // plain little bell
+      travel:   [["harp", 0, 0, 1], ["harp", 1, 0.13, 0.9], ["harp", 2, 0.26, 0.8]],   // walking upward
+      water:    [["drop", 1, 0, 1], ["drop", 0, 0.22, 0.6]],                      // two drops
+      love:     [["choir", 0, 0, 1], ["celesta", 1, 0.06, 0.5]],                  // a sung breath
+      death:    [["low", 0, 0, 1]],                                              // one low, dark note
+      falling:  [["celesta", 2, 0, 1], ["celesta", 1, 0.11, 0.85], ["celesta", 0, 0.22, 0.7], ["celesta", -1, 0.33, 0.55]],
+      flying:   [["harp", -1, 0, 0.7], ["harp", 0, 0.07, 0.8], ["harp", 1, 0.14, 0.9], ["harp", 2, 0.21, 1], ["celesta", 4, 0.3, 0.6]],
+      dance:    [["marimba", 0, 0, 1], ["marimba", 1, 0.17, 0.85], ["marimba", 0, 0.34, 0.7]],
+      animals:  [["marimba", 0, 0, 1]],                                          // a soft wooden knock
+      chase:    [["piano", 0, 0, 0.9], ["piano", 0, 0.12, 0.75], ["piano", 0, 0.24, 0.6]],  // a quick heartbeat
+      fire:     [["bell", 1, 0, 0.8], ["celesta", 2, 0.03, 0.5], ["celesta", 3, 0.09, 0.4]], // a flicker
+      storm:    [["swish", 0, 0, 1], ["low", 0, 0.05, 0.7]],                      // wind + a low note
+      sky:      [["celesta", 3, 0, 0.9], ["celesta", 4, 0.16, 0.6]],              // a high twinkle
+      moon:     [["glass", 3, 0, 1]],                                            // a long glass tone
+      monsters: [["ghost", -2, 0, 1]],                                           // an eerie voice
+      aliens:   [["theremin", 1, 0, 1]],                                         // a sliding, wobbly tone
+      dragons:  [["gong", 0, 0, 1], ["celesta", 2, 0.25, 0.5]],                   // a low gong
+      castle:   [["bell", 0, 0, 1], ["bell", 2, 0.28, 0.6]],                      // two tower bells
+      none:     [["tick", 0, 0, 1]],                                             // everyday dreams: a soft tap
+    };
+    const LOW = { low: 1, gong: 1 };
+    const BAL = { flying: 0.65, dragons: 0.7, travel: 0.75, water: 0.8, aliens: 0.85, animals: 1.6, dance: 1.2, school: 1.15 };   // even out loudness
+    function star(theme, level, at) {
+      const t = (at == null ? ac.currentTime : at) + 0.01, ch = currentChord(t);
+      const hi = chordTones(ch, 67, 100), lo = chordTones(ch, 33, 52);
+      const base = Math.max(0, Math.min(hi.length - 5, 3 + (level | 0)));     // rarer dreams sit higher
+      (STAR[theme] || STAR.none).forEach(([voice, step, d, v]) => {
+        const list = LOW[voice] ? lo : hi, b = LOW[voice] ? 1 : base;
+        const m = list[Math.max(0, Math.min(list.length - 1, b + step))];
+        V[voice](m, t + d, v * (BAL[theme] || 1));
+      });
+    }
+
     // a hover chime that always fits the chord playing now (rare dreams ring higher)
     function chime(level) {
       const ch = currentChord(), tones = chordTones(ch, 74, 98);
@@ -210,7 +317,7 @@
       const t = ac.currentTime + 0.01;
       if (state.mode === "piano") piano(tones[i], t, 0.3); else celesta(tones[i], t, 0.05);
     }
-    return { master, scheduleUntil, chime, currentChord, setMode: m => state.mode = m, get mode() { return state.mode; } };
+    return { master, scheduleUntil, chime, star, themes: Object.keys(STAR), currentChord, setMode: m => state.mode = m, get mode() { return state.mode; } };
   }
 
   // live helper for pages: start on a click, keeps itself scheduled
