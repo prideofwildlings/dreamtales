@@ -569,12 +569,13 @@
       []
     ];
 
-    // SMOKE BREATH: thin wisps curl out of the dragon's nostrils and billow up into a
-    // warm watercolour cloud with an ink outline (painted frames smoke-1..5.png).
+    // SMOKE BREATH: a little flame, then storybook smoke rolls out over the dark sky (frames smoke2-1..5.png).
     // [picture, x, y, width, opacity] — x/y from the mouth, in collage pixels
-    const SW = 105, SH = SW * 160 / 110;                    // frame size; the nostril sits near the bottom-left
-    const at = [-SW * 0.07, -SH * 0.94];
-    const breath = [1, 2, 3, 4, 5].map(n => [[`smoke-${n}.png`, at[0], at[1], SW, 1]]).concat([[]]);
+    // storybook smoke (Over the Garden Wall-ish): curly gouache flame tongues, then billowing smoke
+    // with an ink outline and engraved spiral curls, ochre near the fire cooling to grey, paper embers.
+    const SW = 200, SH = SW * 420 / 360;                    // frame size; the mouth sits near the bottom-left
+    const at = [-SW * 0.18, -SH * 0.86];
+    const breath = [1, 2, 3, 4, 5].map(n => [[`smoke2-${n}.png`, at[0], at[1], SW, 1]]).concat([[]]);
     const sequence = [0, 1, 2, 3, 3, 4, 4, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5];
 
     const dragonGroup = pieces.filter(d => d.name === "dragon");
@@ -638,13 +639,12 @@
     const heartG = coupleArt.append("g").style("pointer-events", "none");
     const shirt = heartG.append("path").attr("fill", "#6f7d3e").attr("stroke", "#3d4422").attr("stroke-width", 0.8);
     const heart = heartG.append("g");
-    heart.append("path")
-      .attr("d", "M0,6 C-10,-2 -14,-9 -9,-14 C-5,-18 -1,-15 0,-11 C1,-15 5,-18 9,-14 C14,-9 10,-2 0,6Z")
-      .attr("fill", "#d8243a").attr("stroke", "#5a0e18").attr("stroke-width", 0.8)
-      .attr("filter", "url(#boil)");
-    heart.append("path")                                            // a little paper shine
-      .attr("d", "M-7,-11 C-6,-13 -4,-13 -3,-12").attr("fill", "none")
-      .attr("stroke", "#f7c6c9").attr("stroke-width", 1.2).attr("stroke-linecap", "round");
+    // a stitched felt heart painted in gouache, like a patch sewn on his shirt (Over the Garden Wall-ish):
+    // three hand-painted frames swap about 6 times a second, so it beats with a little wobble
+    const HEART_FRAMES = ["heart-felt-0.png", "heart-felt-1.png", "heart-felt-2.png"];
+    HEART_FRAMES.concat([1, 2, 3, 4, 5].map(n => `smoke2-${n}.png`)).forEach(src => { new Image().src = src; });   // load early, no flicker
+    const heartImg = heart.append("image").attr("href", HEART_FRAMES[0])
+      .attr("x", -21.7).attr("y", -29.2).attr("width", 45.5).attr("height", 45.5);
 
     // impact lines that flash around the heart on the biggest beats (cut paper strips)
     const thump = heartG.append("g").style("opacity", 0);
@@ -666,6 +666,7 @@
     setInterval(() => {
       const [s, out, st, shake] = beatFrames[heartStep++ % beatFrames.length];
       const hx = CHEST[0] + out, hy = CHEST[1] - out * 0.12;
+      if (heartStep % 2 === 0) heartImg.attr("href", HEART_FRAMES[(heartStep / 2) % 3]);
       heart.attr("transform", `translate(${hx},${hy}) rotate(${-10 + out * 0.25}) scale(${s * st},${s / st})`)
            .style("opacity", out === 0 ? 0 : 1);
       thump.attr("transform", `translate(${hx},${hy - 4}) scale(${s / 2.4})`).style("opacity", shake === 2 ? 1 : 0);
