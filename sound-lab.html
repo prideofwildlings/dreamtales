@@ -45,7 +45,8 @@
 <body>
 <div class="card">
   <h1>sound lab</h1>
-  <p class="sub">three takes on a Gris-like ambient. pick one, let it play a minute or two.</p>
+  <p class="sub">takes on a Gris-like ambient. pick one, then play the stars below.</p>
+  <button class="opt" data-mode="atmos"><b>D</b>dreamy atmosphere (on the site)<span>no melody: soft blooming pads, a far-off hum, space-air and shimmer, so the stars lead</span></button>
   <button class="opt" data-mode="piano"><b>A</b>piano alone<span>a soft felt piano wandering in D minor, lots of space and reverb</span></button>
   <button class="opt" data-mode="strings"><b>B</b>piano + strings<span>the same piano over slow low strings that swell and fade</span></button>
   <button class="opt" data-mode="full"><b>C</b>full: choir + celesta<span>adds a wordless choir now and then and little celesta echoes</span></button>
@@ -76,7 +77,7 @@
   THEMES.forEach(([id, label, lvl]) => {
     const el = document.createElement("span"); el.textContent = label; box.appendChild(el);
     el.onmouseenter = () => {
-      if (!live) { opts[2].click(); }
+      if (!live) { opts[0].click(); }
       live.ac.resume(); live.eng.star(id, lvl);
     };
   });

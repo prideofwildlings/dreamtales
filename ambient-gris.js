@@ -1,7 +1,7 @@
 // ambient-gris.js — a slow, generative score in the spirit of Gris:
 // a soft felt piano in D minor, low strings, a wordless choir and a celesta,
 // all in a big hall reverb. Nothing is a recording; every note is made here.
-// Modes: "piano" (piano alone), "strings" (piano + strings), "full" (+ choir + celesta).
+// Modes: "atmos" (dreamy atmosphere only, so the star sounds lead), "piano", "strings", "full".
 (function () {
   const hz = m => 440 * Math.pow(2, (m - 69) / 12);
 
@@ -48,9 +48,17 @@
     const wet = ac.createGain(); wet.gain.value = 0.62; rev.connect(wet); wet.connect(master);
     const dry = ac.createGain(); dry.gain.value = 0.55; dry.connect(master);
 
+    // a soft echo that star sounds (and far-away notes) fall into
+    const echo = ac.createDelay(3); echo.delayTime.value = 0.62;
+    const eLp = ac.createBiquadFilter(); eLp.type = "lowpass"; eLp.frequency.value = 2400;
+    const eFb = ac.createGain(); eFb.gain.value = 0.42;
+    echo.connect(eLp); eLp.connect(eFb); eFb.connect(echo);
+    const eOut = ac.createGain(); eOut.gain.value = 0.5; eLp.connect(eOut); eOut.connect(dry); eOut.connect(rev);
+    let toEcho = false;
     function route(node, pan, send) {
       const p = ac.createStereoPanner(); p.pan.value = Math.max(-0.8, Math.min(0.8, pan));
       node.connect(p); p.connect(dry);
+      if (toEcho) p.connect(echo);
       const s = ac.createGain(); s.gain.value = send; p.connect(s); s.connect(rev);
     }
 
@@ -139,6 +147,77 @@
       route(g, 0.4, 1.6);
     }
 
+
+    // ---------- the dreamy atmosphere (mode "atmos") ----------
+    // a slow tape-like wobble shared by the pads, so everything floats a little
+    const wob = ac.createOscillator(); wob.frequency.value = 0.18;
+    const wobAmt = ac.createGain(); wobAmt.gain.value = 7; wob.connect(wobAmt); wob.start();
+    // soft space-air: filtered noise whose colour drifts very slowly
+    const abuf = ac.createBuffer(2, ac.sampleRate * 4, ac.sampleRate);
+    for (let c = 0; c < 2; c++) { const d = abuf.getChannelData(c); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; }
+    const air = ac.createBufferSource(); air.buffer = abuf; air.loop = true;
+    const aBp = ac.createBiquadFilter(); aBp.type = "bandpass"; aBp.frequency.value = 900; aBp.Q.value = 0.5;
+    const aLfo = ac.createOscillator(); aLfo.frequency.value = 0.035;
+    const aLfoAmt = ac.createGain(); aLfoAmt.gain.value = 500; aLfo.connect(aLfoAmt); aLfoAmt.connect(aBp.frequency); aLfo.start();
+    const airG = ac.createGain(); airG.gain.value = 0;
+    air.connect(aBp); aBp.connect(airG); airG.connect(master); const airRev = ac.createGain(); airRev.gain.value = 0.6; airG.connect(airRev); airRev.connect(rev);
+    air.start();
+
+    function pad(ms, t, dur, vol) {                    // a chord that blooms in and fades away
+      ms.forEach((m, k) => {
+        const lp = ac.createBiquadFilter(); lp.type = "lowpass"; lp.Q.value = 0.4;
+        lp.frequency.setValueAtTime(300, t);
+        lp.frequency.linearRampToValueAtTime(900 + k * 150, t + dur * 0.5);
+        lp.frequency.linearRampToValueAtTime(350, t + dur);
+        const g = ac.createGain();
+        g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol, t + dur * 0.45);
+        g.gain.linearRampToValueAtTime(0, t + dur);
+        [-11, 0, 10].forEach(dt => {
+          const o = ac.createOscillator(); o.type = k === 0 ? "sine" : "triangle";
+          o.frequency.value = hz(m); o.detune.value = dt; wobAmt.connect(o.detune);
+          o.connect(lp); o.start(t); o.stop(t + dur + 0.1);
+        });
+        lp.connect(g); route(g, (k - 1.5) * 0.4, 1.8);
+      });
+    }
+    function swellNote(m, t, vol) {                    // a note that grows in, like tape played backwards
+      const g = ac.createGain(); const len = 3.2;
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + len);
+      g.gain.linearRampToValueAtTime(0, t + len + 0.08);
+      [[1, 1], [2, 0.25], [3, 0.08]].forEach(([r, a]) => {
+        const o = ac.createOscillator(), og = ac.createGain(); o.frequency.value = hz(m) * r; og.gain.value = a;
+        wobAmt.connect(o.detune); o.connect(og); og.connect(g); o.start(t); o.stop(t + len + 0.1);
+      });
+      toEcho = true; route(g, (Math.random() - 0.5) * 1.2, 2.6); toEcho = false;
+    }
+    function hum(m, t, dur, vol) {                     // a far-off voice humming "mm"
+      const src = ac.createGain();
+      [-5, 6].forEach(dt => {
+        const o = ac.createOscillator(); o.type = "sawtooth"; o.frequency.value = hz(m); o.detune.value = dt;
+        vibAmt.connect(o.detune); o.connect(src); o.start(t); o.stop(t + dur + 0.1);
+      });
+      const lp = ac.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 650; lp.Q.value = 0.3;
+      const g = ac.createGain();
+      g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol, t + dur * 0.5); g.gain.linearRampToValueAtTime(0, t + dur);
+      [[300, 1, 5], [900, 0.25, 7]].forEach(([f, a, q]) => {
+        const bp = ac.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = f; bp.Q.value = q;
+        const fg = ac.createGain(); fg.gain.value = a; src.connect(bp); bp.connect(fg); fg.connect(lp);
+      });
+      lp.connect(g); route(g, -0.3, 2.4);
+    }
+    function shimmer(ms, t, vol) {                     // faint high sparkle that hangs in the air
+      ms.forEach((m, k) => {
+        const g = ac.createGain(), tr = ac.createOscillator(), tg = ac.createGain();
+        g.gain.value = 0; g.gain.setValueAtTime(0, t); g.gain.setValueAtTime(0, t + k * 0.7); g.gain.linearRampToValueAtTime(vol, t + k * 0.7 + 3);
+        g.gain.linearRampToValueAtTime(0, t + k * 0.7 + 9);
+        const trem = ac.createGain(); trem.gain.value = 0.65;
+        tr.frequency.value = 0.4 + k * 0.13; tg.gain.value = 0.35; tr.connect(tg); tg.connect(trem.gain);
+        const o = ac.createOscillator(); o.frequency.value = hz(m);
+        o.connect(trem); trem.connect(g); o.start(t); tr.start(t); o.stop(t + k * 0.7 + 9.2); tr.stop(t + k * 0.7 + 9.2);
+        route(g, (k - 1) * 0.6, 3);
+      });
+    }
+
     // ---- the composer ----
     const BAR = 4.6, BEAT = BAR / 4;
     let tNext = ac.currentTime + 0.3, phraseNo = 0, mel = 74;
@@ -150,7 +229,23 @@
       return m;
     }
     const events = [];                                      // for the "now playing" readout
+    let aIdx = 0;
+    const ACH = PHRASES.flat();
+    function atmos(t0) {
+      const B = 9, ch = ACH[aIdx++ % ACH.length];
+      events.push([t0, ch]);
+      const low = chordTones(ch, 50, 69);
+      pad([ch.bass + 12, low[0], low[1], low[2]].filter(Boolean), Math.max(0, t0 - 1), B + 5, 0.0018);
+      if (Math.random() < 0.45) hum(nearest(chordTones(ch, 55, 64), 59), t0 + 1 + Math.random() * 2, 7, 0.0025);
+      if (Math.random() < 0.5) shimmer(chordTones(ch, 86, 98).slice(0, 3), t0 + Math.random() * 3, 0.0009);
+      if (Math.random() < 0.35) {
+        const hi = chordTones(ch, 72, 86);
+        swellNote(hi[Math.floor(Math.random() * hi.length)], t0 + 2 + Math.random() * 4, 0.005);
+      }
+      return t0 + B;
+    }
     function phrase(t0) {
+      if (state.mode === "atmos") return atmos(t0);
       const chords = PHRASES[phraseNo % PHRASES.length];
       const cycle = Math.floor(phraseNo / PHRASES.length);
       const last = phraseNo % 4 === 3;
@@ -306,7 +401,7 @@
       (STAR[theme] || STAR.none).forEach(([voice, step, d, v]) => {
         const list = LOW[voice] ? lo : hi, b = LOW[voice] ? 1 : base;
         const m = list[Math.max(0, Math.min(list.length - 1, b + step))];
-        V[voice](m, t + d, v * (BAL[theme] || 1));
+        toEcho = true; V[voice](m, t + d, v * (BAL[theme] || 1)); toEcho = false;
       });
     }
 
@@ -317,7 +412,9 @@
       const t = ac.currentTime + 0.01;
       if (state.mode === "piano") piano(tones[i], t, 0.3); else celesta(tones[i], t, 0.05);
     }
-    return { master, scheduleUntil, chime, star, themes: Object.keys(STAR), currentChord, setMode: m => state.mode = m, get mode() { return state.mode; } };
+    const setAir = () => airG.gain.setTargetAtTime(state.mode === "atmos" ? 0.003 : 0, ac.currentTime, 1.5);
+    setAir();
+    return { master, scheduleUntil, chime, star, themes: Object.keys(STAR), currentChord, setMode: m => { state.mode = m; setAir(); }, get mode() { return state.mode; } };
   }
 
   // live helper for pages: start on a click, keeps itself scheduled

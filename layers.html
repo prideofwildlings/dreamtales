@@ -11,7 +11,7 @@
   <script src="layers-data.js?v=39"></script>
   <script src="dreams.js"></script>
   <script src="dream-themes.js?v=38"></script>
-  <script src="ambient-gris.js?v=1"></script>
+  <script src="ambient-gris.js?v=2"></script>
   <script src="sky-stars.js?v=38"></script>
   <style>
     body {
@@ -681,8 +681,8 @@
 
 
     // ---------- 14. AMBIENT SOUND (made in the browser, no music file) ----------
-    // A slow Gris-like score from ambient-gris.js: felt piano in D minor, low strings,
-    // a wordless choir and a celesta in a big reverb. Every dream theme has its own
+    // A quiet, dreamy atmosphere from ambient-gris.js (soft blooming pads, a far-off hum,
+    // space-air, a faint shimmer) so the stars are the instrument. Every dream theme has its own
     // little star sound (a drop for water, a gong for dragons...), always tuned to the
     // chord that is playing, and rarer dreams ring higher.
     // Browsers only allow sound after a click, so it starts from the "sound" tag.
@@ -690,7 +690,7 @@
     let soundOn = false;
     d3.select("#sound").on("click", () => {
       soundOn = !soundOn;
-      if (soundOn && !audio) audio = GrisAmbient.start("full");
+      if (soundOn && !audio) audio = GrisAmbient.start("atmos");
       if (audio) {
         audio.ac.resume();
         audio.out.gain.setTargetAtTime(soundOn ? 0.9 : 0, audio.ac.currentTime, 0.6);
